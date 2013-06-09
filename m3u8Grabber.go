@@ -57,10 +57,9 @@ func tsToMkv(inTsPath string, outMkvPath string) (err error){
   // Look for ffmpeg
   cmd := exec.Command("which", "ffmpeg")
   buf, err := cmd.Output()
-  errorCheck(err)
-  if len(buf) == 0 {
+  if err != nil {
     log.Fatal("ffmpeg wasn't found on your system, it is required to convert to mkv.")
-    os.Exit(0)
+    os.Exit(1)
   }
   ffmpegPath := strings.Trim(string(buf), "\n")
 
