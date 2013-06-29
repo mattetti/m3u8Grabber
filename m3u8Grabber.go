@@ -15,11 +15,36 @@ var outputFileName = flag.String("output", "downloaded_video", "The name of the 
 var httpProxy = flag.String("http_proxy", "", "The url of the HTTP proxy to use")
 var socksProxy = flag.String("socks_proxy", "", "<host>:<port> of the socks5 proxy to use")
 var debug = flag.Bool("debug", false, "Enable debugging messages.")
+var playlist = flag.String("playlist", "", "A list of m3u8 urls to download")
 
 func m3u8ArgCheck() {
-	if *m3u8Url == "" {
+	if *m3u8Url == "" && *playlist == "" {
 		fmt.Fprint(os.Stderr, "You have to pass a m3u8 url file using the right flag.\n")
 		os.Exit(0)
+	}
+}
+
+type PlaylistItem struct {
+	M3u8Url        string
+	OutputFilename string
+	SockProxy      string
+  HttpProxy      string
+}
+
+func downloadM3u8Content(url *string, destFolder string, outputFilename *string, httpProxy *string, socksProxy *string){
+  // tmp and final files
+	tmpTsFile := destFolder + "/" + *outputFileName + ".ts"
+	outputFilePath := destFolder + "/" + *outputFileName + ".mkv"
+
+	log.Println("Downloading " + outputFilePath)
+	if m3u8Utils.FileAlreadyExists(outputFilePath) {
+		log.Println(outputFilePath + " already exists, we won't redownload it.\n")
+		log.Println("Delete the file if you want to redownload it.\n")
+	} else {
+		segmentUrls, _ := m3u8.SegmentsForUrl(*url, httpProxy, socksProxy)
+		m3u8.DownloadSegments(segmentUrls, tmpTsFile, httpProxy, socksProxy)
+		m3u8.TsToMkv(tmpTsFile, outputFilePath)
+		log.Println("Your file is available here: " + outputFilePath)
 	}
 }
 
@@ -38,19 +63,7 @@ func main() {
 	pathToUse, err := os.Getwd()
 	m3u8Utils.ErrorCheck(err)
 
-	// tmp and final files
-	tmpTsFile := pathToUse + "/" + *outputFileName + ".ts"
-	outputFilePath := pathToUse + "/" + *outputFileName + ".mkv"
-
-	log.Println("Downloading " + outputFilePath)
-	if m3u8Utils.FileAlreadyExists(outputFilePath) {
-		log.Println(outputFilePath + " already exists, we won't redownload it.\n")
-		log.Println("Delete the file if you want to redownload it.\n")
-	} else {
-		segmentUrls, _ := m3u8.SegmentsForUrl(*m3u8Url, httpProxy, socksProxy)
-		m3u8.DownloadSegments(segmentUrls, tmpTsFile, httpProxy, socksProxy)
-		m3u8.TsToMkv(tmpTsFile, outputFilePath)
-		log.Println("Your file is available here: " + outputFilePath)
-	}
-
+  if *m3u8Url != "" {
+    downloadM3u8Content(m3u8Url, pathToUse, outputFileName, httpProxy, socksProxy)
+  }
 }

@@ -88,7 +88,7 @@ func downloadUrl(client *http.Client, url *string, retries int, httpProxy, socks
 	resp, err = client.Get(*url)
 	if err != nil {
 		if retries-1 == 0 {
-			return nil, errors.New(*url + "failed to download")
+			return nil, errors.New(*url + " failed to download")
 		} else {
 			return downloadUrl(client, url, retries-1, httpProxy, socksProxy)
 		}
