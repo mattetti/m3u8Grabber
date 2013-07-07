@@ -7,27 +7,29 @@ import (
 	"github.com/mattetti/m3u8GRabber/m3u8Utils"
 	"log"
 	"os"
+  "errors"
 )
 
 // Flags
 var (
   m3u8Url = flag.String("m3u8", "", "Url of the m3u8 file to download.")
   outputFileName = flag.String("output", "downloaded_video", "The name of the output file without the extension.")
-  httpProxy = flag.String("http_proxy", "", "The url of the HTTP proxy to use")
-  socksProxy = flag.String("socks_proxy", "", "<host>:<port> of the socks5 proxy to use")
+  httpProxy = flag.String("http_proxy", "", "The url of the HTTP proxy to use.")
+  socksProxy = flag.String("socks_proxy", "", "<host>:<port> of the socks5 proxy to use.")
   debug = flag.Bool("debug", false, "Enable debugging messages.")
-  Queue m3u8Utils.Queue
+  port = flag.Int("server_port", 13535, "The port to run the http server on.")
+  serverMode = flag.Bool("server", false, "Enable running a local web server (not working yet).")
 )
 
 func m3u8ArgCheck() {
-	if *m3u8Url == "" {
-		fmt.Fprint(os.Stderr, "You have to pass a m3u8 url file using the right flag.\n")
+	if *m3u8Url == "" && !*serverMode {
+		fmt.Fprint(os.Stderr, "You have to pass a m3u8 url file using the right flag or enable the server mode.\n")
 		os.Exit(0)
 	}
 }
 
 
-func downloadM3u8Content(url *string, destFolder string, outputFilename *string, httpProxy *string, socksProxy *string){
+func downloadM3u8Content(url *string, destFolder string, outputFilename, httpProxy, socksProxy *string) error {
   // tmp and final files
 	tmpTsFile := destFolder + "/" + *outputFileName + ".ts"
 	outputFilePath := destFolder + "/" + *outputFileName + ".mkv"
@@ -38,10 +40,31 @@ func downloadM3u8Content(url *string, destFolder string, outputFilename *string,
 		log.Println("Delete the file if you want to redownload it.\n")
 	} else {
 		segmentUrls, _ := m3u8.SegmentsForUrl(*url, httpProxy, socksProxy)
-		m3u8.DownloadSegments(segmentUrls, tmpTsFile, httpProxy, socksProxy)
-		m3u8.TsToMkv(tmpTsFile, outputFilePath)
+    err := m3u8.DownloadSegments(segmentUrls, tmpTsFile, httpProxy, socksProxy)
+		if err != nil {
+      return err
+    }
+    err = m3u8.TsToMkv(tmpTsFile, outputFilePath)
+    if err != nil {
+      return err
+    }
 		log.Println("Your file is available here: " + outputFilePath)
 	}
+  return nil
+}
+
+func downloadM3u8ContentWithRetries(url *string, destFolder string, outputFilename, httpProxy, socksProxy *string, retry int) error {
+  var err error
+  if retry < 3 {
+    err = downloadM3u8Content(url, destFolder, outputFilename, httpProxy, socksProxy)
+    if err != nil {
+      log.Printf("ERROR: %s\n", err)
+      err = downloadM3u8ContentWithRetries(url, destFolder, outputFilename, httpProxy, socksProxy, retry + 1)
+    }
+  } else {
+    return errors.New( "Too many retries" )
+  }
+  return err
 }
 
 func main() {
@@ -60,6 +83,11 @@ func main() {
 	m3u8Utils.ErrorCheck(err)
 
   if *m3u8Url != "" {
-    downloadM3u8Content(m3u8Url, pathToUse, outputFileName, httpProxy, socksProxy)
+    err = downloadM3u8ContentWithRetries(m3u8Url, pathToUse, outputFileName, httpProxy, socksProxy, 0)
+    if err != nil {
+      log.Printf("Error downloading %s, error: %s\n", m3u8Url, err)
+    }
   }
+
+  // server mode
 }

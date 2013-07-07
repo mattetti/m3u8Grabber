@@ -98,22 +98,22 @@ func downloadUrl(client *http.Client, url *string, retries int, httpProxy, socks
 
 // Download a list of segments and put them together.
 func DownloadSegments(segmentUrls *[]string, destination string, httpProxy, socksProxy *string) (err error) {
-
 	out, err := os.Create(destination)
+  if err != nil {
+    return err
+  }
 	defer out.Close()
-	m3u8Utils.ErrorCheck(err)
 
 	totalSegments := len(*segmentUrls)
 	log.Println(fmt.Sprintf("downloading %d segments", totalSegments))
 
 	client := &http.Client{} //Transport: transport}
-
 	// TODO: concurent downloads
 	for i, url := range *segmentUrls {
 
 		resp, err := downloadUrl(client, &url, 5, httpProxy, socksProxy)
-		if err != nil {
-			log.Fatal(err)
+		defer resp.Body.Close()
+    if err != nil {
 			break
 		}
 
@@ -124,10 +124,13 @@ func DownloadSegments(segmentUrls *[]string, destination string, httpProxy, sock
 		}
 
 		_, err = io.Copy(out, resp.Body)
-		m3u8Utils.ErrorCheck(err)
-		resp.Body.Close()
+		if err != nil {
+      break
+    }
 	}
-
+  if err != nil {
+    return err
+  }
 	if !Debug {
 		fmt.Fprint(os.Stdout, "\n")
 	}
@@ -153,15 +156,21 @@ func TsToMkv(inTsPath string, outMkvPath string) (err error) {
 	// Pipe out the cmd output in debug mode
 	if Debug {
 		stdout, err := cmd.StdoutPipe()
-		m3u8Utils.ErrorCheck(err)
+	  if err != nil {
+      return err
+    }
 		stderr, err := cmd.StderrPipe()
-		m3u8Utils.ErrorCheck(err)
+		if err != nil {
+      return err
+    }
 		go io.Copy(os.Stdout, stdout)
 		go io.Copy(os.Stderr, stderr)
 	}
 
 	err = cmd.Start()
-	m3u8Utils.ErrorCheck(err)
+	if err != nil {
+    return err
+  }
 	cmd.Wait()
 
 	state := cmd.ProcessState
