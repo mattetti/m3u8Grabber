@@ -17,7 +17,7 @@ var (
   httpProxy = flag.String("http_proxy", "", "The url of the HTTP proxy to use.")
   socksProxy = flag.String("socks_proxy", "", "<host>:<port> of the socks5 proxy to use.")
   debug = flag.Bool("debug", false, "Enable debugging messages.")
-  port = flag.Int("server_port", 13535, "The port to run the http server on.")
+  serverPort = flag.Int("server_port", 13535, "The port to run the http server on.")
   serverMode = flag.Bool("server", false, "Enable running a local web server (not working yet).")
 )
 
@@ -90,4 +90,7 @@ func main() {
   }
 
   // server mode
+  if *serverMode {
+    m3u8Utils.StartServer(*serverPort)
+  }
 }
