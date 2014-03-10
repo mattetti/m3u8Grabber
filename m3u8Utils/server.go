@@ -22,6 +22,10 @@ type response struct {
 	Message string
 }
 
+func init() {
+	http.HandleFunc("/", mainHandler)
+}
+
 func ErrorCheck(err error) {
 	if err != nil {
 		log.Fatal(err)
@@ -71,10 +75,4 @@ func mainHandler(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(res)
 		return
 	}
-	//
-	fmt.Fprintf(w, "Server running")
-}
-
-func init() {
-	http.HandleFunc("/", mainHandler)
 }
