@@ -1,4 +1,4 @@
-package m3u8Utils
+package server
 
 import (
 	"encoding/json"
@@ -33,12 +33,7 @@ func ErrorCheck(err error) {
 	}
 }
 
-func FileAlreadyExists(path string) bool {
-	_, err := os.Stat(path)
-	return !os.IsNotExist(err)
-}
-
-func StartServer(port int, rootDir string) {
+func Start(port int, rootDir string) {
 	log.Printf("About to start the server on port %d\n", port)
 	queue = make(chan *dlRequest)
 	go receiveJobs(queue)

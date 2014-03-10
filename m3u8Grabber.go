@@ -6,8 +6,8 @@ import (
 	"log"
 	"os"
 
-	"github.com/mattetti/m3u8GRabber/m3u8Utils"
 	"github.com/mattetti/m3u8Grabber/m3u8"
+	"github.com/mattetti/m3u8Grabber/server"
 )
 
 // Flags
@@ -42,10 +42,12 @@ func main() {
 
 	// Working dir
 	pathToUse, err := os.Getwd()
-	m3u8Utils.ErrorCheck(err)
+	if err != nil {
+		panic(err)
+	}
 
 	if *m3u8Url != "" {
-		err = m3u8Utils.DownloadM3u8ContentWithRetries(*m3u8Url, pathToUse, *outputFileName, *httpProxy, *socksProxy, 0)
+		err = m3u8.DownloadM3u8ContentWithRetries(*m3u8Url, pathToUse, *outputFileName, *httpProxy, *socksProxy, 0)
 		if err != nil {
 			log.Printf("Error downloading %s, error: %s\n", m3u8Url, err)
 			os.Exit(2)
@@ -54,6 +56,6 @@ func main() {
 
 	// server mode
 	if *serverMode {
-		m3u8Utils.StartServer(*serverPort, *dlRootDir)
+		server.Start(*serverPort, *dlRootDir)
 	}
 }

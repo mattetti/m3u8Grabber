@@ -1,10 +1,9 @@
-package m3u8Utils
+package m3u8
 
 import (
 	"errors"
 	"log"
-
-	"github.com/mattetti/m3u8Grabber/m3u8"
+	"os"
 )
 
 // downloadM3u8ContentWithRetries fetches a m3u8 and convert it to mkv.
@@ -31,20 +30,25 @@ func DownloadM3u8Content(url, destFolder, outputFilename, httpProxy, socksProxy 
 	outputFilePath := destFolder + "/" + outputFilename + ".mkv"
 
 	log.Println("Downloading to " + outputFilePath)
-	if FileAlreadyExists(outputFilePath) {
+	if fileAlreadyExists(outputFilePath) {
 		log.Println(outputFilePath + " already exists, we won't redownload it.\n")
 		log.Println("Delete the file if you want to redownload it.\n")
 	} else {
-		m3f := &m3u8.M3u8File{Url: url}
+		m3f := &M3u8File{Url: url}
 		err := m3f.DownloadToFile(tmpTsFile, httpProxy, socksProxy)
 		if err != nil {
 			return err
 		}
-		err = m3u8.TsToMkv(tmpTsFile, outputFilePath)
+		err = TsToMkv(tmpTsFile, outputFilePath)
 		if err != nil {
 			return err
 		}
 		log.Println("Your file is available here: " + outputFilePath)
 	}
 	return nil
+}
+
+func fileAlreadyExists(path string) bool {
+	_, err := os.Stat(path)
+	return !os.IsNotExist(err)
 }
