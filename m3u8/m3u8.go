@@ -20,6 +20,12 @@ type M3u8File struct {
 	Segments []string
 }
 
+type M3u8Seg struct {
+	Url      string
+	Position int
+	Response *http.Response
+}
+
 func (f *M3u8File) DownloadToFile(tmpFile, httpProxy, socksProxy string) error {
 	err := f.getSegments(httpProxy, socksProxy)
 	if err != nil {
@@ -88,31 +94,74 @@ func (f *M3u8File) dlSegments(destination, httpProxy, socksProxy string) error {
 	log.Println(fmt.Sprintf("downloading %d segments", totalSegments))
 
 	client := &http.Client{} //Transport: transport}
-	// TODO: concurent downloads
+
 	var resp *http.Response
+	errChan := make(chan error)
+	// TODO: sets a chan of chan to limit the amount
+	// of concurrenct downloads
+	ch := make(chan *M3u8Seg)
+	dlQueue := make(chan *M3u8Seg, 3)
+	var downloadsLeft int
+
+	// enqueue the downloads on the dlQueue
 	for i, url := range f.Segments {
-		resp, err = downloadUrl(client, url, 5, httpProxy, socksProxy)
-		if err != nil {
-			break
-		}
-		defer resp.Body.Close()
-
-		if Debug {
-			log.Println(fmt.Sprintf("downloaded %d of %d", (i + 1), totalSegments))
-		} else {
-			fmt.Fprint(os.Stdout, ".")
-		}
-
-		_, err = io.Copy(out, resp.Body)
-		if err != nil {
-			break
-		}
+		downloadsLeft++
+		go func(dlUrl string, pos int) {
+			dlQueue <- &M3u8Seg{Url: dlUrl, Position: pos}
+		}(url, i)
 	}
-	if err != nil {
-		return err
-	}
-	if !Debug {
-		fmt.Fprint(os.Stdout, "\n")
+
+	var procdSegments int
+	for {
+		select {
+		// download queue buffered at 3 concurrent dls max
+		case seg := <-dlQueue:
+			go func(segToDl *M3u8Seg) {
+				resp, err = downloadUrl(client, segToDl.Url, 5, httpProxy, socksProxy)
+				if err != nil {
+					downloadsLeft--
+					errChan <- err
+					return
+				}
+				segToDl.Response = resp
+				ch <- segToDl
+			}(seg)
+		case r, ok := <-ch:
+			if !ok {
+				// channel closed
+				return nil
+			}
+			procdSegments++
+			log.Println(r.Response.Request.URL, r.Position)
+			//if Debug {
+			log.Printf("downloaded segment %d of %d\n", procdSegments, totalSegments)
+			//} else {
+			/*				fmt.Fprint(os.Stdout, ".")*/
+			/*			}*/
+			defer r.Response.Body.Close()
+			// TODO: copy to different files and put them together at the end
+			// otherwise the segments won't be assembled in the right order.
+			out, err := os.Create(fmt.Sprintf("%s._%d", destination, r.Position))
+			if err != nil {
+				errChan <- err
+				continue
+			}
+			defer out.Close()
+			_, err = io.Copy(out, r.Response.Body)
+			if err != nil {
+				errChan <- err
+				continue
+			}
+			downloadsLeft--
+			if downloadsLeft < 1 {
+				fmt.Println("TODO: assemble the ts file")
+				return nil
+			}
+		case err := <-errChan:
+			// TODO: do a retry after the download is moved to a struct
+			fmt.Println("failed ", err)
+			return err
+		}
 	}
 	return err
 }
