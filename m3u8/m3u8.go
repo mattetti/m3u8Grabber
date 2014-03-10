@@ -6,15 +6,10 @@ import (
 	"io"
 	"io/ioutil"
 	"log"
-	"net"
 	"net/http"
 	"net/url"
 	"os"
-	"os/exec"
 	"strings"
-	"time"
-
-	"github.com/hailiang/gosocks"
 )
 
 var Debug = false
@@ -120,107 +115,4 @@ func (f *M3u8File) dlSegments(destination, httpProxy, socksProxy string) error {
 		fmt.Fprint(os.Stdout, "\n")
 	}
 	return err
-}
-
-// TsToMkv converts a mp4/aac TS file into a MKV file using ffmeg.
-func TsToMkv(inTsPath, outMkvPath string) (err error) {
-
-	// Look for ffmpeg
-	cmd := exec.Command("which", "ffmpeg")
-	buf, err := cmd.Output()
-	if err != nil {
-		log.Fatal("ffmpeg wasn't found on your system, it is required to convert to mkv.\n" +
-			"Temp file left on your hardrive:\n" + inTsPath)
-		os.Exit(1)
-	}
-	ffmpegPath := strings.Trim(string(buf), "\n")
-
-	// ffmpeg flags
-	// -y overwrites without asking
-	cmd = exec.Command(ffmpegPath, "-y", "-i", inTsPath, "-vcodec", "copy", "-acodec", "copy", outMkvPath)
-
-	// Pipe out the cmd output in debug mode
-	if Debug {
-		stdout, err := cmd.StdoutPipe()
-		if err != nil {
-			return err
-		}
-		stderr, err := cmd.StderrPipe()
-		if err != nil {
-			return err
-		}
-		go io.Copy(os.Stdout, stdout)
-		go io.Copy(os.Stderr, stderr)
-	}
-
-	err = cmd.Start()
-	if err != nil {
-		return err
-	}
-	cmd.Wait()
-
-	state := cmd.ProcessState
-	if !state.Success() {
-		log.Fatal("Something went wrong when trying to use ffmpeg")
-	} else {
-		err = os.Remove(inTsPath)
-		if err != nil {
-			log.Println("Couldn't delete temp file: " + inTsPath + "\n Please delete manually.\n")
-		}
-	}
-
-	return err
-}
-
-// downloadUrl is a wrapper allowing to download content by setting up optional proxies and supporting retries.
-func downloadUrl(client *http.Client, url string, retries int, httpProxy, socksProxy string) (resp *http.Response, err error) {
-	client.Transport, err = customTransport(httpProxy, socksProxy)
-	if err != nil {
-		return nil, err
-	}
-	resp, err = client.Get(url)
-	// Handle retries
-	if err != nil {
-		if retries-1 == 0 {
-			return nil, errors.New(url + " failed to download")
-		} else {
-			return downloadUrl(client, url, retries-1, httpProxy, socksProxy)
-		}
-	}
-	return resp, err
-}
-
-// customTransport lets users use custom http or socks proxy.
-// If none of the proxy settings were passed, a normal transport is used
-// with some default timeout values.
-func customTransport(httpProxy, socksProxy string) (*http.Transport, error) {
-	var transport *http.Transport
-	var err error
-	// http proxy transport
-	if httpProxy != "" {
-		url, err := url.Parse(httpProxy)
-		if err != nil {
-			return nil, err
-		}
-		transport = &http.Transport{Proxy: http.ProxyURL(url)}
-		// socks proxy transport
-	} else if socksProxy != "" {
-		dialSocksProxy := socks.DialSocksProxy(socks.SOCKS5, socksProxy)
-		transport = &http.Transport{Dial: dialSocksProxy}
-	} else {
-		// timeout transport
-		transport = &http.Transport{ResponseHeaderTimeout: 5 * time.Second,
-			Dial: func(netw, addr string) (net.Conn, error) {
-				deadline := time.Now().Add(45 * time.Second)
-				c, err := net.DialTimeout(netw, addr, time.Second)
-				if err != nil {
-					return nil, err
-				}
-				c.SetDeadline(deadline)
-				return c, nil
-			},
-		}
-	}
-
-	return transport, err
 }
