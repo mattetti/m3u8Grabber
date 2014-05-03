@@ -49,13 +49,13 @@ func main() {
 	if *m3u8Url != "" {
 		err = m3u8.DownloadM3u8ContentWithRetries(*m3u8Url, pathToUse, *outputFileName, *httpProxy, *socksProxy, 0)
 		if err != nil {
-			log.Printf("Error downloading %s, error: %s\n", m3u8Url, err)
+			log.Printf("Error downloading %s, error: %s\n", *m3u8Url, err)
 			os.Exit(2)
 		}
 	}
 
 	// server mode
 	if *serverMode {
-		server.Start(*serverPort, *dlRootDir)
+		server.Start(*serverPort, *dlRootDir, *httpProxy, *socksProxy)
 	}
 }

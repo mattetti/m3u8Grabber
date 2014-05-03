@@ -24,6 +24,8 @@ type M3u8Seg struct {
 	Url      string
 	Position int
 	Response *http.Response
+	// Download retries before giving up
+	Retries int
 }
 
 func (f *M3u8File) DownloadToFile(tmpFile, httpProxy, socksProxy string) error {
@@ -107,7 +109,7 @@ func (f *M3u8File) dlSegments(destination, httpProxy, socksProxy string) error {
 	for i, url := range f.Segments {
 		downloadsLeft++
 		go func(dlUrl string, pos int) {
-			dlQueue <- &M3u8Seg{Url: dlUrl, Position: pos}
+			dlQueue <- &M3u8Seg{Url: dlUrl, Position: pos, Retries: 5}
 		}(url, i)
 	}
 
@@ -117,11 +119,17 @@ func (f *M3u8File) dlSegments(destination, httpProxy, socksProxy string) error {
 		// download queue buffered at 3 concurrent dls max
 		case seg := <-dlQueue:
 			go func(segToDl *M3u8Seg) {
-				resp, err = downloadUrl(client, segToDl.Url, 5, httpProxy, socksProxy)
+				resp, err = downloadUrl(client, segToDl.Url, segToDl.Retries, httpProxy, socksProxy)
 				if err != nil {
-					downloadsLeft--
-					errChan <- err
-					return
+					if segToDl.Retries > 1 {
+						fmt.Println("Retying downloading ", segToDl.Url)
+						segToDl.Retries--
+						dlQueue <- segToDl
+					} else {
+						downloadsLeft--
+						errChan <- err
+						return
+					}
 				}
 				segToDl.Response = resp
 				ch <- segToDl
@@ -138,7 +146,10 @@ func (f *M3u8File) dlSegments(destination, httpProxy, socksProxy string) error {
 			//} else {
 			/*				fmt.Fprint(os.Stdout, ".")*/
 			/*			}*/
-			defer r.Response.Body.Close()
+			if r.Response.StatusCode != 200 {
+				fmt.Println(r.Response)
+				continue
+			}
 			// TODO: copy to different files and put them together at the end
 			// otherwise the segments won't be assembled in the right order.
 			out, err := os.Create(fmt.Sprintf("%s._%d", destination, r.Position))
@@ -147,6 +158,7 @@ func (f *M3u8File) dlSegments(destination, httpProxy, socksProxy string) error {
 				continue
 			}
 			defer out.Close()
+			defer r.Response.Body.Close()
 			_, err = io.Copy(out, r.Response.Body)
 			if err != nil {
 				errChan <- err

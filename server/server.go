@@ -7,23 +7,38 @@ import (
 	"net/http"
 	"os"
 	"time"
+
+	"github.com/mattetti/m3u8Grabber/m3u8"
 )
 
-var queue chan *dlRequest
+var (
+	queue      chan *dlRequest
+	httpProxy  string
+	socksProxy string
+)
+
+func init() {
+	http.HandleFunc("/", mainHandler)
+}
 
 type dlRequest struct {
-	Url    string
-	Output string
+	// source of the m3u8 file to download
+	Url string
+	// path to download the file to
+	Path string
+	// output filename
+	Filename string
+}
+
+func (j *dlRequest) Download() error {
+	log.Println(j)
+	return m3u8.DownloadM3u8ContentWithRetries(j.Url, j.Path, j.Filename, httpProxy, socksProxy, 2)
 }
 
 type response struct {
 	Url     string
 	Output  string
 	Message string
-}
-
-func init() {
-	http.HandleFunc("/", mainHandler)
 }
 
 func ErrorCheck(err error) {
@@ -33,22 +48,29 @@ func ErrorCheck(err error) {
 	}
 }
 
-func Start(port int, rootDir string) {
+func Start(port int, rootDir, httpP, socksP string) {
 	log.Printf("About to start the server on port %d\n", port)
+	httpProxy = httpP
+	socksProxy = socksP
 	queue = make(chan *dlRequest)
 	go receiveJobs(queue)
 	log.Fatal(http.ListenAndServe(fmt.Sprintf(":%d", port), nil))
 }
 
+// function designed to run in a goroutine
+// and pull requests from a queue
 func receiveJobs(jobChan chan *dlRequest) {
 	fmt.Println("Waiting for a new job ...")
+	var err error
 	for {
 		select {
 		case job := <-jobChan:
-			log.Println(job)
-
-			// TODO: trigger the download job in another go routine
-			//time.Sleep(5000 * time.Millisecond)
+			// TODO: trigger the download job and wait until it's done
+			// to move on to the next job.
+			err = job.Download()
+			if err != nil {
+				fmt.Printf("Error: %s", err)
+			}
 		case <-time.After(30 * time.Second):
 			fmt.Printf(".")
 		}
@@ -65,8 +87,10 @@ func mainHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		// add to queue
-		queue <- &req
-		res := response{req.Url, req.Output, "Added to the queue"}
+		go func(qreq *dlRequest) {
+			queue <- qreq
+		}(&req)
+		res := response{req.Url, req.Filename, "Added to the queue"}
 		json.NewEncoder(w).Encode(res)
 		return
 	}
