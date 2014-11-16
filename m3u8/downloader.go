@@ -2,40 +2,86 @@ package m3u8
 
 import (
 	"errors"
+	"fmt"
 	"log"
 	"net"
 	"net/http"
 	"net/url"
 	"os"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/hailiang/gosocks"
 )
 
+var (
+	TimeoutDuration = 12 * time.Minute
+	MaxRetries      = 3
+	totalWorkers    = 7
+	DlChan          = make(chan *WJob)
+)
+
+const (
+	_ int = iota
+	ListDL
+	FileDL
+)
+
 // downloadM3u8ContentWithRetries fetches a m3u8 and convert it to mkv.
 // Downloads can fail a few times and will retried.
 func DownloadM3u8ContentWithRetries(url, destFolder, outputFilename, httpProxy, socksProxy string, retry int) error {
-	var err error
 
-	if retry < 3 {
-		err = DownloadM3u8Content(url, destFolder, outputFilename, httpProxy, socksProxy)
-		if err != nil {
-			log.Printf("ERROR: %s\n", err)
-			err = DownloadM3u8ContentWithRetries(url, destFolder, outputFilename, httpProxy, socksProxy, retry+1)
+	if retry < MaxRetries {
+		errChan := make(chan error)
+
+		go func() {
+			errChan <- DownloadM3u8Content(url, destFolder, outputFilename, httpProxy, socksProxy)
+		}()
+
+		select {
+		case err := <-errChan:
+			if err != nil {
+				log.Printf("ERROR: %s\n", err)
+				if retry+1 < MaxRetries {
+					return DownloadM3u8ContentWithRetries(url, destFolder, outputFilename, httpProxy, socksProxy, retry+1)
+				} else {
+					return errors.New("Too many retries")
+				}
+			}
+			return nil
+		case <-time.After(TimeoutDuration):
+			// TODO: cancel existing download
+			if retry+1 < MaxRetries {
+				log.Printf("%s timed out, retrying...(%d retries left)\n", outputFilename, (MaxRetries - (retry + 1)))
+				return DownloadM3u8ContentWithRetries(url, destFolder, outputFilename, httpProxy, socksProxy, retry+1)
+			} else {
+				return errors.New(fmt.Sprintf("Downloading %s timed out", outputFilename))
+			}
 		}
+
 	} else {
 		return errors.New("Too many retries")
 	}
-	return err
+	return nil
 }
 
 // DownloadM3u8Content fetches and convert a m3u8 into a mkv file.
 func DownloadM3u8Content(url, destFolder, outputFilename, httpProxy, socksProxy string) error {
 	// tmp and final files
+	destFolder = cleanPath(destFolder)
 	tmpTsFile := destFolder + "/" + outputFilename + ".ts"
+	if _, err := os.Stat(destFolder); err != nil {
+		if os.IsNotExist(err) {
+			// file does not exist
+			os.MkdirAll(destFolder, 0774)
+		} else {
+			return err
+		}
+	}
 	outputFilePath := destFolder + "/" + outputFilename + ".mkv"
 
-	log.Println("Downloading to " + outputFilePath)
+	log.Printf("Downloading to %s\n", outputFilePath)
 	if fileAlreadyExists(outputFilePath) {
 		log.Println(outputFilePath + " already exists, we won't redownload it.\n")
 		log.Println("Delete the file if you want to redownload it.\n")
@@ -110,4 +156,41 @@ func customTransport(httpProxy, socksProxy string) (*http.Transport, error) {
 	}
 
 	return transport, err
+}
+
+func cleanPath(path string) string {
+	path = strings.Replace(path, "?", "", -1)
+	return strings.TrimSpace(path)
+}
+
+// LaunchWorkers starts download workers
+func LaunchWorkers(wg *sync.WaitGroup, stop <-chan bool) {
+	for i := 0; i < totalWorkers; i++ {
+		w := &Worker{i, wg}
+		go w.Work()
+	}
+
+}
+
+type Worker struct {
+	id int
+	wg *sync.WaitGroup
+}
+
+func (w *Worker) Work() {
+	fmt.Printf("worker %d is ready for action\n", w.id)
+	for msg := range DlChan {
+		fmt.Printf("worker %d - %#v", w.id, msg)
+	}
+
+	fmt.Printf("worker %d is out", w.id)
+	w.wg.Done()
+}
+
+type WJob struct {
+	Type     int
+	URL      string
+	DestPath string
+	Filename string
+	Retries  int
 }

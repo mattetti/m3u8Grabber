@@ -93,7 +93,7 @@ func (f *M3u8File) dlSegments(destination, httpProxy, socksProxy string) error {
 	defer out.Close()
 
 	totalSegments := len(f.Segments)
-	log.Println(fmt.Sprintf("downloading %d segments", totalSegments))
+	fmt.Printf("Downloading %d segments\n", totalSegments)
 
 	client := &http.Client{} //Transport: transport}
 
@@ -140,9 +140,11 @@ func (f *M3u8File) dlSegments(destination, httpProxy, socksProxy string) error {
 				return nil
 			}
 			procdSegments++
-			log.Println(r.Response.Request.URL, r.Position)
+			if Debug {
+				log.Println(r.Response.Request.URL, r.Position)
+			}
 			//if Debug {
-			log.Printf("downloaded segment %d of %d\n", procdSegments, totalSegments)
+			log.Printf("%d/%d\n", procdSegments, totalSegments)
 			//} else {
 			/*				fmt.Fprint(os.Stdout, ".")*/
 			/*			}*/
@@ -166,7 +168,36 @@ func (f *M3u8File) dlSegments(destination, httpProxy, socksProxy string) error {
 			}
 			downloadsLeft--
 			if downloadsLeft < 1 {
-				fmt.Println("TODO: assemble the ts file")
+				fmt.Printf("Assemble the %d ts files\n", totalSegments)
+				out, err := os.OpenFile(destination, os.O_APPEND|os.O_WRONLY, 0774)
+				defer out.Close()
+				if err != nil {
+					return err
+				}
+				files := make([]string, totalSegments)
+				for i := 0; i < totalSegments; i++ {
+					files[i] = fmt.Sprintf("%s._%d", destination, i)
+				}
+				fmt.Printf("Assembling %d ts segments\n", len(files))
+				for _, file := range files {
+					if file == "" {
+						continue
+					}
+					in, err := os.OpenFile(file, os.O_RDONLY, 0666)
+					if err != nil {
+						return errors.New(fmt.Sprintf("Can't open %s because %s\n", file, err))
+					}
+					_, err = io.Copy(out, in)
+					in.Close()
+					if err != nil {
+						return err
+					}
+					out.Sync()
+					err = os.Remove(file)
+					if err != nil {
+						return err
+					}
+				}
 				return nil
 			}
 		case err := <-errChan:
