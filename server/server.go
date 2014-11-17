@@ -59,8 +59,8 @@ func Start(port int, rootDir, httpP, socksP string) {
 	stopChan := make(chan bool)
 	m3u8.LaunchWorkers(&w, stopChan)
 	go receiveJobs(queue)
-	log.Fatal(http.ListenAndServe(fmt.Sprintf(":%d", port), nil))
-	//log.Fatal(http.ListenAndServeTLS(fmt.Sprintf(":%d", port), "cert.pem", "key.pem", nil))
+	//log.Fatal(http.ListenAndServe(fmt.Sprintf(":%d", port), nil))
+	log.Fatal(http.ListenAndServeTLS(fmt.Sprintf(":%d", port), "cert.pem", "key.pem", nil))
 	// TODO: handle safe shutdown
 }
 
