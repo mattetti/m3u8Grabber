@@ -95,9 +95,6 @@ func mainHandler(w http.ResponseWriter, r *http.Request) {
 		// add to queue
 		go func(qreq *dlRequest) {
 			m3u8.DlChan <- &m3u8.WJob{Type: m3u8.ListDL, URL: req.Url, DestPath: req.Path, Filename: req.Filename}
-			//go func(qreq *dlRequest) {
-			//log.Printf("Queued up %s\n\n", qreq.Filename)
-			//queue <- qreq
 		}(&req)
 		res := response{req.Url, req.Filename, "Added to the queue"}
 		json.NewEncoder(w).Encode(res)

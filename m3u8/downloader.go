@@ -9,7 +9,6 @@ import (
 	"net/url"
 	"os"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/hailiang/gosocks"
@@ -18,14 +17,6 @@ import (
 var (
 	TimeoutDuration = 12 * time.Minute
 	MaxRetries      = 3
-	totalWorkers    = 7
-	DlChan          = make(chan *WJob)
-)
-
-const (
-	_ int = iota
-	ListDL
-	FileDL
 )
 
 // downloadM3u8ContentWithRetries fetches a m3u8 and convert it to mkv.
@@ -161,36 +152,4 @@ func customTransport(httpProxy, socksProxy string) (*http.Transport, error) {
 func cleanPath(path string) string {
 	path = strings.Replace(path, "?", "", -1)
 	return strings.TrimSpace(path)
-}
-
-// LaunchWorkers starts download workers
-func LaunchWorkers(wg *sync.WaitGroup, stop <-chan bool) {
-	for i := 0; i < totalWorkers; i++ {
-		w := &Worker{i, wg}
-		go w.Work()
-	}
-
-}
-
-type Worker struct {
-	id int
-	wg *sync.WaitGroup
-}
-
-func (w *Worker) Work() {
-	fmt.Printf("worker %d is ready for action\n", w.id)
-	for msg := range DlChan {
-		fmt.Printf("worker %d - %#v", w.id, msg)
-	}
-
-	fmt.Printf("worker %d is out", w.id)
-	w.wg.Done()
-}
-
-type WJob struct {
-	Type     int
-	URL      string
-	DestPath string
-	Filename string
-	Retries  int
 }

@@ -37,14 +37,14 @@ func (f *M3u8File) DownloadToFile(tmpFile, httpProxy, socksProxy string) error {
 }
 
 func (f *M3u8File) getSegments(httpProxy, socksProxy string) error {
-	transport, err := customTransport(httpProxy, socksProxy)
-	if err != nil {
-		return err
-	}
-	client := &http.Client{Transport: transport}
+	//transport, err := customTransport(httpProxy, socksProxy)
+	//if err != nil {
+	//return err
+	//}
+	client := &http.Client{} //Transport: transport}
 	response, err := client.Get(f.Url)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Couldn't download url: %s\n", f.Url)
+		fmt.Fprintf(os.Stderr, "Couldn't download url: %s - %s\n", f.Url, err)
 		return err
 	}
 	defer response.Body.Close()
