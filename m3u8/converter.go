@@ -39,15 +39,16 @@ func TsToMkv(inTsPath, outMkvPath string) (err error) {
 		go io.Copy(os.Stderr, stderr)
 	}
 
-	err = cmd.Start()
-	if err != nil {
+	if err := cmd.Start(); err != nil {
 		return err
 	}
-	cmd.Wait()
+	if err := cmd.Wait(); err != nil {
+		log.Println("ffmpeg Error: %v", err)
+	}
 
 	state := cmd.ProcessState
 	if !state.Success() {
-		log.Fatal("Something went wrong when trying to use ffmpeg")
+		log.Println("Error: something went wrong when trying to use ffmpeg")
 	} else {
 		err = os.Remove(inTsPath)
 		if err != nil {
