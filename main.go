@@ -13,6 +13,7 @@ import (
 // Flags
 var (
 	m3u8Url        = flag.String("m3u8", "", "Url of the m3u8 file to download.")
+	m3u8File       = flag.String("m3u8File", "", "path to file to use")
 	outputFileName = flag.String("output", "downloaded_video", "The name of the output file without the extension.")
 	httpProxy      = flag.String("http_proxy", "", "The url of the HTTP proxy to use.")
 	socksProxy     = flag.String("socks_proxy", "", "<host>:<port> of the socks5 proxy to use.")

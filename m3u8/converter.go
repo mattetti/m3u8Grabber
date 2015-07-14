@@ -1,12 +1,19 @@
 package m3u8
 
 import (
+	"fmt"
 	"io"
 	"log"
 	"os"
 	"os/exec"
 	"strings"
 )
+
+// TsToMp4 converts a mp4/aac TS file into a MKV file using ffmeg.
+func TsToMp4(inTsPath, outMp4Path string) error {
+	fmt.Println("converting to mp4")
+	return TsToMkv(inTsPath, outMp4Path)
+}
 
 // TsToMkv converts a mp4/aac TS file into a MKV file using ffmeg.
 func TsToMkv(inTsPath, outMkvPath string) (err error) {
@@ -15,7 +22,7 @@ func TsToMkv(inTsPath, outMkvPath string) (err error) {
 	cmd := exec.Command("which", "ffmpeg")
 	buf, err := cmd.Output()
 	if err != nil {
-		log.Fatal("ffmpeg wasn't found on your system, it is required to convert to mkv.\n" +
+		log.Fatal("ffmpeg wasn't found on your system, it is required to convert video files.\n" +
 			"Temp file left on your hardrive:\n" + inTsPath)
 		os.Exit(1)
 	}
@@ -23,7 +30,8 @@ func TsToMkv(inTsPath, outMkvPath string) (err error) {
 
 	// ffmpeg flags
 	// -y overwrites without asking
-	cmd = exec.Command(ffmpegPath, "-y", "-i", inTsPath, "-vcodec", "copy", "-acodec", "copy", outMkvPath)
+	//cmd = exec.Command(ffmpegPath, "-y", "-i", inTsPath, "-vcodec", "copy", "-acodec", "copy", outMkvPath)
+	cmd = exec.Command(ffmpegPath, "-y", "-i", inTsPath, "-vcodec", "copy", "-acodec", "copy", "-bsf:a", "aac_adtstoasc", outMkvPath)
 
 	// Pipe out the cmd output in debug mode
 	if Debug {
@@ -43,7 +51,9 @@ func TsToMkv(inTsPath, outMkvPath string) (err error) {
 		return err
 	}
 	if err := cmd.Wait(); err != nil {
-		log.Println("ffmpeg Error: %v", err)
+		log.Printf("ffmpeg Error: %v\n", err)
+		log.Println("args", cmd.Args)
+		return err
 	}
 
 	state := cmd.ProcessState

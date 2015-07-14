@@ -48,14 +48,16 @@ type Worker struct {
 func (w *Worker) Work() {
 	fmt.Printf("worker %d is ready for action\n", w.id)
 	for msg := range DlChan {
+		w.wg.Add(1)
 		w.dispatch(msg)
 	}
 
 	fmt.Printf("worker %d is out", w.id)
-	w.wg.Done()
+	//w.wg.Done()
 }
 
 func (w *Worker) dispatch(job *WJob) {
+	defer w.wg.Done()
 	switch job.Type {
 	case ListDL:
 		// don't block the worker
@@ -86,7 +88,7 @@ func (w *Worker) downloadM3u8List(j *WJob) {
 	}
 	j.wg.Wait()
 	// put the segments together
-	fmt.Println("All segments downloaded")
+	fmt.Printf("All segments (%d) downloaded!\n", len(m3f.Segments))
 	// assemble
 	tmpTsFile := j.DestPath + "/" + j.Filename + ".ts"
 	if _, err := os.Stat(j.DestPath); err != nil {
@@ -100,7 +102,7 @@ func (w *Worker) downloadM3u8List(j *WJob) {
 			return
 		}
 	}
-	mkvPath := filepath.Join(j.DestPath, j.Filename) + ".mkv"
+	mp4Path := filepath.Join(j.DestPath, j.Filename) + ".mp4"
 	out, err := os.Create(tmpTsFile) //OpenFile(outputFilePath, os.O_APPEND|os.O_WRONLY, os.ModePerm)
 	if err != nil {
 		fmt.Printf("Failed to create output ts file - %s - %s\n", tmpTsFile, err)
@@ -108,10 +110,7 @@ func (w *Worker) downloadM3u8List(j *WJob) {
 	}
 	defer out.Close()
 
-	if err != nil {
-		fmt.Printf("Failed to open tmp ts file - %s - %s\n", tmpTsFile, err)
-		return
-	}
+	fmt.Printf("Preparing to convert to %s\n", mp4Path)
 
 	for i := 0; i < len(m3f.Segments); i++ {
 		file := segmentTmpPath(j.DestPath, j.Filename, i)
@@ -133,11 +132,11 @@ func (w *Worker) downloadM3u8List(j *WJob) {
 			return
 		}
 	}
-	if err := TsToMkv(tmpTsFile, mkvPath); err != nil {
-		fmt.Println("ts to mkv error", err)
+	if err := TsToMp4(tmpTsFile, mp4Path); err != nil {
+		fmt.Println("ts to mp4 error", err)
 		return
 	}
-	fmt.Printf("Episode available at %s\n", mkvPath)
+	fmt.Printf("Episode available at %s\n", mp4Path)
 }
 
 // downloadM3u8Segment downloads one segment of a m3u8 file
