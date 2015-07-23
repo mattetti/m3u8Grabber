@@ -3,6 +3,7 @@ package m3u8
 import (
 	"fmt"
 	"io"
+	"io/ioutil"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -12,6 +13,7 @@ import (
 var (
 	TotalWorkers = 4
 	DlChan       = make(chan *WJob)
+	TmpFolder, _ = ioutil.TempDir("", "m3u8worker")
 )
 
 type WJobType int
@@ -25,7 +27,7 @@ const (
 // LaunchWorkers starts download workers
 func LaunchWorkers(wg *sync.WaitGroup, stop <-chan bool) {
 	for i := 0; i < TotalWorkers; i++ {
-		w := &Worker{i, wg}
+		w := &Worker{id: i, wg: wg}
 		go w.Work()
 	}
 
@@ -87,6 +89,8 @@ func (w *Worker) downloadM3u8List(j *WJob) {
 		}
 	}
 	j.wg.Wait()
+	w.wg.Add(1)
+	defer w.wg.Done()
 	// put the segments together
 	fmt.Printf("All segments (%d) downloaded!\n", len(m3f.Segments))
 	// assemble
@@ -183,5 +187,5 @@ func (w *Worker) downloadM3u8Segment(j *WJob) {
 }
 
 func segmentTmpPath(path, filename string, pos int) string {
-	return fmt.Sprintf("%s/%s._%d", path, filename, pos)
+	return fmt.Sprintf("%s/%s._%d", TmpFolder, filename, pos)
 }
