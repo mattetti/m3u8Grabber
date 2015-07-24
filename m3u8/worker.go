@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -48,14 +49,13 @@ type Worker struct {
 }
 
 func (w *Worker) Work() {
-	fmt.Printf("worker %d is ready for action\n", w.id)
+	log.Printf("worker %d is ready for action\n", w.id)
 	for msg := range DlChan {
 		w.wg.Add(1)
 		w.dispatch(msg)
 	}
 
-	fmt.Printf("worker %d is out", w.id)
-	//w.wg.Done()
+	log.Printf("worker %d is out", w.id)
 }
 
 func (w *Worker) dispatch(job *WJob) {
@@ -66,7 +66,7 @@ func (w *Worker) dispatch(job *WJob) {
 	case FileDL:
 		w.downloadM3u8Segment(job)
 	default:
-		fmt.Println("format not supported")
+		log.Println("format not supported")
 		return
 	}
 
@@ -89,55 +89,55 @@ func (w *Worker) downloadM3u8List(j *WJob) {
 	}
 	j.wg.Wait()
 	// put the segments together
-	fmt.Printf("All segments (%d) downloaded!\n", len(m3f.Segments))
+	log.Printf("All segments (%d) downloaded!\n", len(m3f.Segments))
 	// assemble
 	tmpTsFile := j.DestPath + "/" + j.Filename + ".ts"
 	if _, err := os.Stat(j.DestPath); err != nil {
 		if os.IsNotExist(err) {
 			// file does not exist
 			if err := os.MkdirAll(j.DestPath, os.ModePerm); err != nil {
-				fmt.Printf("Failed to create path to %s - %s\n", j.DestPath, err)
+				log.Printf("Failed to create path to %s - %s\n", j.DestPath, err)
 			}
 		} else {
-			fmt.Printf("Failed to create tmp ts file: %s - %s", tmpTsFile, err)
+			log.Printf("Failed to create tmp ts file: %s - %s", tmpTsFile, err)
 			return
 		}
 	}
 	mp4Path := filepath.Join(j.DestPath, j.Filename) + ".mp4"
 	out, err := os.Create(tmpTsFile) //OpenFile(outputFilePath, os.O_APPEND|os.O_WRONLY, os.ModePerm)
 	if err != nil {
-		fmt.Printf("Failed to create output ts file - %s - %s\n", tmpTsFile, err)
+		log.Printf("Failed to create output ts file - %s - %s\n", tmpTsFile, err)
 		return
 	}
 	defer out.Close()
 
-	fmt.Printf("Preparing to convert to %s\n", mp4Path)
+	log.Printf("Preparing to convert to %s\n", mp4Path)
 
 	for i := 0; i < len(m3f.Segments); i++ {
 		file := segmentTmpPath(j.DestPath, j.Filename, i)
 		in, err := os.OpenFile(file, os.O_RDONLY, 0666)
 		if err != nil {
-			fmt.Printf("Can't open %s because %s\n", file, err)
+			log.Printf("Can't open %s because %s\n", file, err)
 			return
 		}
 		_, err = io.Copy(out, in)
 		in.Close()
 		if err != nil {
-			fmt.Println(err)
+			log.Println(err)
 			return
 		}
 		out.Sync()
 		err = os.Remove(file)
 		if err != nil {
-			fmt.Println(err)
+			log.Println(err)
 			return
 		}
 	}
 	if err := TsToMp4(tmpTsFile, mp4Path); err != nil {
-		fmt.Println("ts to mp4 error", err)
+		log.Println("ts to mp4 error", err)
 		return
 	}
-	fmt.Printf("Episode available at %s\n", mp4Path)
+	log.Printf("Episode available at %s\n", mp4Path)
 }
 
 // downloadM3u8Segment downloads one segment of a m3u8 file
@@ -148,17 +148,17 @@ func (w *Worker) downloadM3u8Segment(j *WJob) {
 		}
 	}()
 
-	fmt.Printf("worker %d - (%#s)", w.id, filepath.Join(j.DestPath, j.Filename))
-	fmt.Printf(" - segment file %d\n", j.Pos)
+	log.Printf("worker %d - (%#s)", w.id, filepath.Join(j.DestPath, j.Filename))
+	log.Printf(" - segment file %d\n", j.Pos)
 	client := &http.Client{}
 	resp, err := client.Get(j.URL)
 	if err != nil {
-		fmt.Println("Failed to download ", j.URL)
+		log.Println("Failed to download ", j.URL)
 		return
 	}
 
 	if resp.StatusCode != 200 {
-		fmt.Println(resp)
+		log.Println(resp)
 		return
 	}
 
@@ -168,19 +168,19 @@ func (w *Worker) downloadM3u8Segment(j *WJob) {
 	}
 
 	if err := os.MkdirAll(j.DestPath, os.ModePerm); err != nil {
-		fmt.Printf("m3u8 download failed - %s\n", err)
+		log.Printf("m3u8 download failed - %s\n", err)
 		return
 	}
 
 	out, err := os.Create(destination)
 	if err != nil {
-		fmt.Println(err)
+		log.Println(err)
 		return
 	}
 	defer out.Close()
 	defer resp.Body.Close()
 	_, err = io.Copy(out, resp.Body)
-	fmt.Println("saved", destination)
+	log.Println("saved", destination)
 }
 
 func segmentTmpPath(path, filename string, pos int) string {
