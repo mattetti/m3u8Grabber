@@ -62,8 +62,7 @@ func (w *Worker) dispatch(job *WJob) {
 	defer w.wg.Done()
 	switch job.Type {
 	case ListDL:
-		// don't block the worker
-		go w.downloadM3u8List(job)
+		w.downloadM3u8List(job)
 	case FileDL:
 		w.downloadM3u8Segment(job)
 	default:
@@ -89,8 +88,6 @@ func (w *Worker) downloadM3u8List(j *WJob) {
 		}
 	}
 	j.wg.Wait()
-	w.wg.Add(1)
-	defer w.wg.Done()
 	// put the segments together
 	fmt.Printf("All segments (%d) downloaded!\n", len(m3f.Segments))
 	// assemble
