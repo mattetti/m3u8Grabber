@@ -14,6 +14,7 @@ import (
 var (
 	TotalWorkers = 4
 	DlChan       = make(chan *WJob)
+	segChan      = make(chan *WJob)
 	TmpFolder, _ = ioutil.TempDir("", "m3u8worker")
 )
 
@@ -27,11 +28,15 @@ const (
 
 // LaunchWorkers starts download workers
 func LaunchWorkers(wg *sync.WaitGroup, stop <-chan bool) {
-	for i := 0; i < TotalWorkers; i++ {
+	// the master worker downloads one full m3u8 at a time but
+	// segments are downloaded concurrently
+	masterW := &Worker{id: 0, wg: wg, master: true}
+	go masterW.Work()
+
+	for i := 1; i < TotalWorkers+1; i++ {
 		w := &Worker{id: i, wg: wg}
 		go w.Work()
 	}
-
 }
 
 type WJob struct {
@@ -44,22 +49,27 @@ type WJob struct {
 }
 
 type Worker struct {
-	id int
-	wg *sync.WaitGroup
+	id     int
+	wg     *sync.WaitGroup
+	master bool
 }
 
 func (w *Worker) Work() {
 	log.Printf("worker %d is ready for action\n", w.id)
-	for msg := range DlChan {
-		w.wg.Add(1)
-		w.dispatch(msg)
+	if w.master {
+		for msg := range DlChan {
+			w.dispatch(msg)
+		}
+	} else {
+		for msg := range segChan {
+			w.dispatch(msg)
+		}
 	}
 
 	log.Printf("worker %d is out", w.id)
 }
 
 func (w *Worker) dispatch(job *WJob) {
-	defer w.wg.Done()
 	switch job.Type {
 	case ListDL:
 		w.downloadM3u8List(job)
@@ -78,7 +88,7 @@ func (w *Worker) downloadM3u8List(j *WJob) {
 	j.wg = &sync.WaitGroup{}
 	for i, segURL := range m3f.Segments {
 		j.wg.Add(1)
-		DlChan <- &WJob{
+		segChan <- &WJob{
 			Type:     FileDL,
 			URL:      segURL,
 			Pos:      i,
@@ -87,6 +97,7 @@ func (w *Worker) downloadM3u8List(j *WJob) {
 			Filename: j.Filename,
 		}
 	}
+	log.Printf("[%d] waiting for the segments to be downloaded", w.id)
 	j.wg.Wait()
 	// put the segments together
 	log.Printf("All segments (%d) downloaded!\n", len(m3f.Segments))
@@ -148,8 +159,7 @@ func (w *Worker) downloadM3u8Segment(j *WJob) {
 		}
 	}()
 
-	log.Printf("worker %d - (%#s)", w.id, filepath.Join(j.DestPath, j.Filename))
-	log.Printf(" - segment file %d\n", j.Pos)
+	log.Printf("[%d] - %s - segment file %d\n", w.id, j.Filename, j.Pos)
 	client := &http.Client{}
 	resp, err := client.Get(j.URL)
 	if err != nil {
