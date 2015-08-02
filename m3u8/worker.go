@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 )
 
@@ -34,7 +35,7 @@ func LaunchWorkers(wg *sync.WaitGroup, stop <-chan bool) {
 	go masterW.Work()
 
 	for i := 1; i < TotalWorkers+1; i++ {
-		w := &Worker{id: i, wg: wg}
+		w := &Worker{id: i, wg: wg, client: &http.Client{}}
 		go w.Work()
 	}
 }
@@ -52,6 +53,7 @@ type Worker struct {
 	id     int
 	wg     *sync.WaitGroup
 	master bool
+	client *http.Client
 }
 
 func (w *Worker) Work() {
@@ -86,6 +88,7 @@ func (w *Worker) downloadM3u8List(j *WJob) {
 	m3f := &M3u8File{Url: j.URL}
 	m3f.getSegments("", "")
 	j.wg = &sync.WaitGroup{}
+	j.Filename = CleanFilename(j.Filename)
 	for i, segURL := range m3f.Segments {
 		j.wg.Add(1)
 		segChan <- &WJob{
@@ -126,6 +129,11 @@ func (w *Worker) downloadM3u8List(j *WJob) {
 
 	for i := 0; i < len(m3f.Segments); i++ {
 		file := segmentTmpPath(j.DestPath, j.Filename, i)
+		if _, err := os.Stat(file); err != nil {
+			log.Printf("skipping opening %s because %v\n", file, err)
+			continue
+		}
+
 		in, err := os.OpenFile(file, os.O_RDONLY, 0666)
 		if err != nil {
 			log.Printf("Can't open %s because %s\n", file, err)
@@ -160,8 +168,7 @@ func (w *Worker) downloadM3u8Segment(j *WJob) {
 	}()
 
 	log.Printf("[%d] - %s - segment file %d\n", w.id, j.Filename, j.Pos)
-	client := &http.Client{}
-	resp, err := client.Get(j.URL)
+	resp, err := w.client.Get(j.URL)
 	if err != nil {
 		log.Println("Failed to download ", j.URL)
 		return
@@ -184,15 +191,23 @@ func (w *Worker) downloadM3u8Segment(j *WJob) {
 
 	out, err := os.Create(destination)
 	if err != nil {
-		log.Println(err)
+		log.Println("error creating file", err)
 		return
 	}
 	defer out.Close()
 	defer resp.Body.Close()
 	_, err = io.Copy(out, resp.Body)
+	if err != nil {
+		log.Println("error copying resp body to file", err)
+		return
+	}
 	log.Println("saved", destination)
 }
 
 func segmentTmpPath(path, filename string, pos int) string {
-	return fmt.Sprintf("%s/%s._%d", TmpFolder, filename, pos)
+	return fmt.Sprintf("%s/%s._%d", TmpFolder, strings.Replace(filename, "/", "-", -1), pos)
+}
+
+func CleanFilename(name string) string {
+	return strings.Replace(name, "/", "-", -1)
 }
