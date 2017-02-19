@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"runtime"
 	"strings"
 )
 
@@ -19,7 +20,12 @@ func TsToMp4(inTsPath, outMp4Path string) error {
 func TsToMkv(inTsPath, outMkvPath string) (err error) {
 
 	// Look for ffmpeg
-	cmd := exec.Command("which", "ffmpeg")
+	var cmd *exec.Cmd
+	if runtime.GOOS == "windows" {
+		cmd = exec.Command("where", "ffmpeg")
+	} else {
+		cmd = exec.Command("which", "ffmpeg")
+	}
 	buf, err := cmd.Output()
 	if err != nil {
 		log.Fatal("ffmpeg wasn't found on your system, it is required to convert video files.\n" +
