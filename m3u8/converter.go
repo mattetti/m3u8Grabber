@@ -32,7 +32,7 @@ func TsToMkv(inTsPath, outMkvPath string) (err error) {
 			"Temp file left on your hardrive:\n" + inTsPath)
 		os.Exit(1)
 	}
-	ffmpegPath := strings.Trim(string(buf), "\n")
+	ffmpegPath := strings.Trim(strings.Trim(string(buf), "\r\n"), "\n")
 
 	// ffmpeg flags
 	// -y overwrites without asking

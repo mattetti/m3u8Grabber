@@ -19,7 +19,7 @@ var (
 	MaxRetries      = 3
 )
 
-// downloadM3u8ContentWithRetries fetches a m3u8 and convert it to mkv.
+// DownloadM3u8ContentWithRetries fetches a m3u8 and convert it to mkv.
 // Downloads can fail a few times and will retried.
 func DownloadM3u8ContentWithRetries(url, destFolder, outputFilename, httpProxy, socksProxy string, retry int) error {
 
@@ -36,9 +36,9 @@ func DownloadM3u8ContentWithRetries(url, destFolder, outputFilename, httpProxy, 
 				log.Printf("ERROR: %s\n", err)
 				if retry+1 < MaxRetries {
 					return DownloadM3u8ContentWithRetries(url, destFolder, outputFilename, httpProxy, socksProxy, retry+1)
-				} else {
-					return errors.New("Too many retries")
 				}
+				return errors.New("Too many retries")
+
 			}
 			return nil
 		case <-time.After(TimeoutDuration):
@@ -46,9 +46,9 @@ func DownloadM3u8ContentWithRetries(url, destFolder, outputFilename, httpProxy, 
 			if retry+1 < MaxRetries {
 				log.Printf("%s timed out, retrying...(%d retries left)\n", outputFilename, (MaxRetries - (retry + 1)))
 				return DownloadM3u8ContentWithRetries(url, destFolder, outputFilename, httpProxy, socksProxy, retry+1)
-			} else {
-				return errors.New(fmt.Sprintf("Downloading %s timed out", outputFilename))
 			}
+			return fmt.Errorf("Downloading %s timed out", outputFilename)
+
 		}
 
 	} else {
@@ -107,9 +107,9 @@ func downloadUrl(client *http.Client, url string, retries int, httpProxy, socksP
 	if err != nil {
 		if retries-1 == 0 {
 			return nil, errors.New(url + " failed to download")
-		} else {
-			return downloadUrl(client, url, retries-1, httpProxy, socksProxy)
 		}
+		return downloadUrl(client, url, retries-1, httpProxy, socksProxy)
+
 	}
 	return resp, err
 }

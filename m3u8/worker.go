@@ -123,8 +123,6 @@ func (w *Worker) downloadM3u8List(j *WJob) {
 		log.Printf("Failed to create output ts file - %s - %s\n", tmpTsFile, err)
 		return
 	}
-	defer out.Close()
-
 	log.Printf("Preparing to convert to %s\n", mp4Path)
 
 	for i := 0; i < len(m3f.Segments); i++ {
@@ -137,21 +135,25 @@ func (w *Worker) downloadM3u8List(j *WJob) {
 		in, err := os.OpenFile(file, os.O_RDONLY, 0666)
 		if err != nil {
 			log.Printf("Can't open %s because %s\n", file, err)
+			out.Close()
 			return
 		}
 		_, err = io.Copy(out, in)
 		in.Close()
 		if err != nil {
 			log.Println(err)
+			out.Close()
 			return
 		}
 		out.Sync()
 		err = os.Remove(file)
 		if err != nil {
 			log.Println(err)
+			out.Close()
 			return
 		}
 	}
+	out.Close()
 	if err := TsToMp4(tmpTsFile, mp4Path); err != nil {
 		log.Println("ts to mp4 error", err)
 		return
