@@ -3,7 +3,6 @@ package m3u8
 import (
 	"errors"
 	"fmt"
-	"log"
 	"net"
 	"net/http"
 	"net/url"
@@ -33,7 +32,7 @@ func DownloadM3u8ContentWithRetries(url, destFolder, outputFilename, httpProxy, 
 		select {
 		case err := <-errChan:
 			if err != nil {
-				log.Printf("ERROR: %s\n", err)
+				Logger.Printf("ERROR: %s\n", err)
 				if retry+1 < MaxRetries {
 					return DownloadM3u8ContentWithRetries(url, destFolder, outputFilename, httpProxy, socksProxy, retry+1)
 				}
@@ -44,7 +43,7 @@ func DownloadM3u8ContentWithRetries(url, destFolder, outputFilename, httpProxy, 
 		case <-time.After(TimeoutDuration):
 			// TODO: cancel existing download
 			if retry+1 < MaxRetries {
-				log.Printf("%s timed out, retrying...(%d retries left)\n", outputFilename, (MaxRetries - (retry + 1)))
+				Logger.Printf("%s timed out, retrying...(%d retries left)\n", outputFilename, (MaxRetries - (retry + 1)))
 				return DownloadM3u8ContentWithRetries(url, destFolder, outputFilename, httpProxy, socksProxy, retry+1)
 			}
 			return fmt.Errorf("Downloading %s timed out", outputFilename)
@@ -72,10 +71,10 @@ func DownloadM3u8Content(url, destFolder, outputFilename, httpProxy, socksProxy 
 	}
 	outputFilePath := destFolder + "/" + outputFilename + ".mkv"
 
-	log.Printf("Downloading to %s\n", outputFilePath)
+	Logger.Printf("Downloading to %s\n", outputFilePath)
 	if fileAlreadyExists(outputFilePath) {
-		log.Println(outputFilePath + " already exists, we won't redownload it.\n")
-		log.Println("Delete the file if you want to redownload it.\n")
+		Logger.Println(outputFilePath + " already exists, we won't redownload it.\n")
+		Logger.Println("Delete the file if you want to redownload it.\n")
 	} else {
 		m3f := &M3u8File{Url: url}
 		err := m3f.DownloadToFile(tmpTsFile, httpProxy, socksProxy)
@@ -86,7 +85,7 @@ func DownloadM3u8Content(url, destFolder, outputFilename, httpProxy, socksProxy 
 		if err != nil {
 			return err
 		}
-		log.Println("Your file is available here: " + outputFilePath)
+		Logger.Println("Your file is available here: " + outputFilePath)
 	}
 	return nil
 }

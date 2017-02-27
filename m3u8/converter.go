@@ -1,9 +1,7 @@
 package m3u8
 
 import (
-	"fmt"
 	"io"
-	"log"
 	"os"
 	"os/exec"
 	"runtime"
@@ -12,7 +10,7 @@ import (
 
 // TsToMp4 converts a mp4/aac TS file into a MKV file using ffmeg.
 func TsToMp4(inTsPath, outMp4Path string) error {
-	fmt.Println("converting to mp4")
+	Logger.Println("converting to mp4")
 	return TsToMkv(inTsPath, outMp4Path)
 }
 
@@ -28,7 +26,7 @@ func TsToMkv(inTsPath, outMkvPath string) (err error) {
 	}
 	buf, err := cmd.Output()
 	if err != nil {
-		log.Fatal("ffmpeg wasn't found on your system, it is required to convert video files.\n" +
+		Logger.Fatal("ffmpeg wasn't found on your system, it is required to convert video files.\n" +
 			"Temp file left on your hardrive:\n" + inTsPath)
 		os.Exit(1)
 	}
@@ -57,18 +55,18 @@ func TsToMkv(inTsPath, outMkvPath string) (err error) {
 		return err
 	}
 	if err := cmd.Wait(); err != nil {
-		log.Printf("ffmpeg Error: %v\n", err)
-		log.Println("args", cmd.Args)
+		Logger.Printf("ffmpeg Error: %v\n", err)
+		Logger.Println("args", cmd.Args)
 		return err
 	}
 
 	state := cmd.ProcessState
 	if !state.Success() {
-		log.Println("Error: something went wrong when trying to use ffmpeg")
+		Logger.Println("Error: something went wrong when trying to use ffmpeg")
 	} else {
 		err = os.Remove(inTsPath)
 		if err != nil {
-			log.Println("Couldn't delete temp file: " + inTsPath + "\n Please delete manually.\n")
+			Logger.Println("Couldn't delete temp file: " + inTsPath + "\n Please delete manually.\n")
 		}
 	}
 

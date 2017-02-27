@@ -13,6 +13,7 @@ import (
 )
 
 var Debug = false
+var Logger = log.New(os.Stdout, "", log.Ldate|log.Ltime|log.Lshortfile)
 
 type M3u8File struct {
 	Url string
@@ -44,7 +45,7 @@ func (f *M3u8File) getSegments(httpProxy, socksProxy string) error {
 	client := &http.Client{} //Transport: transport}
 	response, err := client.Get(f.Url)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Couldn't download url: %s - %s\n", f.Url, err)
+		Logger.Printf("Couldn't download url: %s - %s\n", f.Url, err)
 		return err
 	}
 	defer response.Body.Close()
@@ -83,7 +84,7 @@ func (f *M3u8File) getSegments(httpProxy, socksProxy string) error {
 
 func (f *M3u8File) dlSegments(destination, httpProxy, socksProxy string) error {
 	if f.Segments == nil || len(f.Segments) < 1 {
-		log.Println("No segments to download")
+		Logger.Println("No segments to download")
 		return nil
 	}
 	out, err := os.Create(destination)
@@ -93,7 +94,7 @@ func (f *M3u8File) dlSegments(destination, httpProxy, socksProxy string) error {
 	defer out.Close()
 
 	totalSegments := len(f.Segments)
-	fmt.Printf("Downloading %d segments\n", totalSegments)
+	Logger.Printf("Downloading %d segments\n", totalSegments)
 
 	client := &http.Client{} //Transport: transport}
 
@@ -122,7 +123,7 @@ func (f *M3u8File) dlSegments(destination, httpProxy, socksProxy string) error {
 				resp, err = downloadUrl(client, segToDl.Url, segToDl.Retries, httpProxy, socksProxy)
 				if err != nil {
 					if segToDl.Retries > 1 {
-						fmt.Println("Retying downloading ", segToDl.Url)
+						Logger.Println("Retying downloading ", segToDl.Url)
 						segToDl.Retries--
 						dlQueue <- segToDl
 					} else {
@@ -141,15 +142,15 @@ func (f *M3u8File) dlSegments(destination, httpProxy, socksProxy string) error {
 			}
 			procdSegments++
 			if Debug {
-				log.Println(r.Response.Request.URL, r.Position)
+				Logger.Println(r.Response.Request.URL, r.Position)
 			}
 			//if Debug {
-			log.Printf("%d/%d\n", procdSegments, totalSegments)
+			Logger.Printf("%d/%d\n", procdSegments, totalSegments)
 			//} else {
 			/*				fmt.Fprint(os.Stdout, ".")*/
 			/*			}*/
 			if r.Response.StatusCode != 200 {
-				fmt.Println(r.Response)
+				Logger.Println(r.Response)
 				continue
 			}
 			// TODO: copy to different files and put them together at the end
@@ -168,7 +169,7 @@ func (f *M3u8File) dlSegments(destination, httpProxy, socksProxy string) error {
 			}
 			downloadsLeft--
 			if downloadsLeft < 1 {
-				fmt.Printf("Assemble the %d ts files\n", totalSegments)
+				Logger.Printf("Assemble the %d ts files\n", totalSegments)
 				out, err := os.OpenFile(destination, os.O_APPEND|os.O_WRONLY, 0774)
 				defer out.Close()
 				if err != nil {
@@ -178,7 +179,7 @@ func (f *M3u8File) dlSegments(destination, httpProxy, socksProxy string) error {
 				for i := 0; i < totalSegments; i++ {
 					files[i] = fmt.Sprintf("%s._%d", destination, i)
 				}
-				fmt.Printf("Assembling %d ts segments\n", len(files))
+				Logger.Printf("Assembling %d ts segments\n", len(files))
 				for _, file := range files {
 					if file == "" {
 						continue
@@ -202,7 +203,7 @@ func (f *M3u8File) dlSegments(destination, httpProxy, socksProxy string) error {
 			}
 		case err := <-errChan:
 			// TODO: do a retry after the download is moved to a struct
-			fmt.Println("failed ", err)
+			Logger.Println("failed ", err)
 			return err
 		}
 	}
