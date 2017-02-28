@@ -150,5 +150,8 @@ func customTransport(httpProxy, socksProxy string) (*http.Transport, error) {
 
 func cleanPath(path string) string {
 	path = strings.Replace(path, "?", "", -1)
+	path = strings.Replace(path, ":", "", -1)
+	path = strings.Replace(path, ",", "", -1)
+	//"!"#$%&'()*,:;<=>?[]^`{|}" string with "!"#$%&'()*,,;<=>?[]^`{|}".
 	return strings.TrimSpace(path)
 }
