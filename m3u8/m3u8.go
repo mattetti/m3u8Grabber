@@ -170,7 +170,7 @@ func (f *M3u8File) dlSegments(destination, httpProxy, socksProxy string) error {
 			downloadsLeft--
 			if downloadsLeft < 1 {
 				Logger.Printf("Assemble the %d ts files\n", totalSegments)
-				out, err := os.OpenFile(destination, os.O_APPEND|os.O_WRONLY, 0774)
+				out, err := os.Open(destination)
 				defer out.Close()
 				if err != nil {
 					return err
@@ -184,9 +184,9 @@ func (f *M3u8File) dlSegments(destination, httpProxy, socksProxy string) error {
 					if file == "" {
 						continue
 					}
-					in, err := os.OpenFile(file, os.O_RDONLY, 0666)
+					in, err := os.Open(file)
 					if err != nil {
-						return errors.New(fmt.Sprintf("Can't open %s because %s\n", file, err))
+						return fmt.Errorf("can't open %s because %s", file, err)
 					}
 					_, err = io.Copy(out, in)
 					in.Close()
