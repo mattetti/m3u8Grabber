@@ -15,7 +15,7 @@ var (
 	TotalWorkers = 4
 	DlChan       = make(chan *WJob)
 	segChan      = make(chan *WJob)
-	TmpFolder, _ = ioutil.TempDir("", "")
+	TmpFolder, _ = ioutil.TempDir("", "m3u8")
 )
 
 type WJobType int
