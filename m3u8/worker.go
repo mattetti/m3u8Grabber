@@ -216,5 +216,5 @@ func segmentTmpPath(path, filename string, pos int) string {
 }
 
 func CleanFilename(name string) string {
-	return strings.Replace(name, "/", "-", -1)
+	return CleanPath(strings.Replace(name, "/", "-", -1))
 }
