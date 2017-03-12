@@ -88,7 +88,7 @@ func (w *Worker) downloadM3u8List(j *WJob) {
 	m3f.getSegments("", "")
 	j.wg = &sync.WaitGroup{}
 	j.Filename = CleanFilename(j.Filename)
-	j.DestPath = cleanPath(j.DestPath)
+	j.DestPath = CleanPath(j.DestPath)
 	for i, segURL := range m3f.Segments {
 		j.wg.Add(1)
 		segChan <- &WJob{

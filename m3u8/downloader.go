@@ -59,7 +59,7 @@ func DownloadM3u8ContentWithRetries(url, destFolder, outputFilename, httpProxy, 
 // DownloadM3u8Content fetches and convert a m3u8 into a mkv file.
 func DownloadM3u8Content(url, destFolder, outputFilename, httpProxy, socksProxy string) error {
 	// tmp and final files
-	destFolder = cleanPath(destFolder)
+	destFolder = CleanPath(destFolder)
 	tmpTsFile := destFolder + "/" + outputFilename + ".ts"
 	if _, err := os.Stat(destFolder); err != nil {
 		if os.IsNotExist(err) {
@@ -148,7 +148,7 @@ func customTransport(httpProxy, socksProxy string) (*http.Transport, error) {
 	return transport, err
 }
 
-func cleanPath(path string) string {
+func CleanPath(path string) string {
 	path = strings.Replace(path, "?", "", -1)
 	// On windows we don't want to remove C:\
 	if strings.Index(path, ":") > -1 {
