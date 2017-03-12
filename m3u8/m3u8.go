@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -87,6 +88,7 @@ func (f *M3u8File) dlSegments(destination, httpProxy, socksProxy string) error {
 		Logger.Println("No segments to download")
 		return nil
 	}
+	destination = filepath.Join(filepath.Dir(destination), cleanPath(filepath.Base(destination)))
 	out, err := os.Create(destination)
 	if err != nil {
 		return err
