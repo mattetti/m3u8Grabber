@@ -212,7 +212,7 @@ func (w *Worker) downloadM3u8Segment(j *WJob) {
 }
 
 func segmentTmpPath(path, filename string, pos int) string {
-	return fmt.Sprintf("%s/%s._%d", TmpFolder, strings.Replace(filename, "/", "-", -1), pos)
+	return filepath.Join(TmpFolder, fmt.Sprintf("%s._%d", strings.Replace(filename, "/", "-", -1), pos))
 }
 
 func CleanFilename(name string) string {
