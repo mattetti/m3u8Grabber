@@ -12,10 +12,11 @@ import (
 )
 
 var (
-	TotalWorkers = 4
-	DlChan       = make(chan *WJob)
-	segChan      = make(chan *WJob)
-	TmpFolder, _ = ioutil.TempDir("", "m3u8")
+	TotalWorkers    = 4
+	DlChan          = make(chan *WJob)
+	segChan         = make(chan *WJob)
+	TmpFolder, _    = ioutil.TempDir("", "m3u8")
+	filenameCleaner = strings.NewReplacer("/", "-", "!", "", "?", "", ",", "")
 )
 
 type WJobType int
@@ -212,9 +213,9 @@ func (w *Worker) downloadM3u8Segment(j *WJob) {
 }
 
 func segmentTmpPath(path, filename string, pos int) string {
-	return filepath.Join(TmpFolder, fmt.Sprintf("%s._%d", strings.Replace(filename, "/", "-", -1), pos))
+	return filepath.Join(TmpFolder, fmt.Sprintf("%s._%d", filenameCleaner.Replace(filename), pos))
 }
 
 func CleanFilename(name string) string {
-	return CleanPath(strings.Replace(name, "/", "-", -1))
+	return CleanPath(filenameCleaner.Replace(name))
 }
