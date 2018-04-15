@@ -2,7 +2,6 @@ package m3u8
 
 import (
 	"errors"
-	"fmt"
 	"net"
 	"net/http"
 	"net/url"
@@ -17,78 +16,6 @@ var (
 	TimeoutDuration = 12 * time.Minute
 	MaxRetries      = 3
 )
-
-// DownloadM3u8ContentWithRetries fetches a m3u8 and convert it to mkv.
-// Downloads can fail a few times and will retried.
-func DownloadM3u8ContentWithRetries(url, destFolder, outputFilename, httpProxy, socksProxy string, retry int) error {
-
-	if retry < MaxRetries {
-		errChan := make(chan error)
-
-		go func() {
-			errChan <- DownloadM3u8Content(url, destFolder, outputFilename, httpProxy, socksProxy)
-		}()
-
-		select {
-		case err := <-errChan:
-			if err != nil {
-				Logger.Printf("ERROR: %s\n", err)
-				if retry+1 < MaxRetries {
-					return DownloadM3u8ContentWithRetries(url, destFolder, outputFilename, httpProxy, socksProxy, retry+1)
-				}
-				return errors.New("Too many retries")
-
-			}
-			return nil
-		case <-time.After(TimeoutDuration):
-			// TODO: cancel existing download
-			if retry+1 < MaxRetries {
-				Logger.Printf("%s timed out, retrying...(%d retries left)\n", outputFilename, (MaxRetries - (retry + 1)))
-				return DownloadM3u8ContentWithRetries(url, destFolder, outputFilename, httpProxy, socksProxy, retry+1)
-			}
-			return fmt.Errorf("Downloading %s timed out", outputFilename)
-
-		}
-
-	} else {
-		return errors.New("Too many retries")
-	}
-	return nil
-}
-
-// DownloadM3u8Content fetches and convert a m3u8 into a mkv file.
-func DownloadM3u8Content(url, destFolder, outputFilename, httpProxy, socksProxy string) error {
-	// tmp and final files
-	destFolder = CleanPath(destFolder)
-	tmpTsFile := destFolder + "/" + outputFilename + ".ts"
-	if _, err := os.Stat(destFolder); err != nil {
-		if os.IsNotExist(err) {
-			// file does not exist
-			os.MkdirAll(destFolder, 0774)
-		} else {
-			return err
-		}
-	}
-	outputFilePath := destFolder + "/" + outputFilename + ".mkv"
-
-	Logger.Printf("Downloading to %s\n", outputFilePath)
-	if fileAlreadyExists(outputFilePath) {
-		Logger.Println(outputFilePath + " already exists, we won't redownload it.\n")
-		Logger.Println("Delete the file if you want to redownload it.\n")
-	} else {
-		m3f := &M3u8File{Url: url}
-		err := m3f.DownloadToFile(tmpTsFile, httpProxy, socksProxy)
-		if err != nil {
-			return err
-		}
-		err = TsToMkv(tmpTsFile, outputFilePath)
-		if err != nil {
-			return err
-		}
-		Logger.Println("Your file is available here: " + outputFilePath)
-	}
-	return nil
-}
 
 func fileAlreadyExists(path string) bool {
 	_, err := os.Stat(path)

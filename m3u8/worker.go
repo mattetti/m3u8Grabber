@@ -1,6 +1,7 @@
 package m3u8
 
 import (
+	"encoding/binary"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -47,7 +48,10 @@ type WJob struct {
 	DestPath      string
 	Filename      string
 	Pos           int
-	wg            *sync.WaitGroup
+	// Key is the AES segment key if available
+	Key []byte
+	IV  []byte
+	wg  *sync.WaitGroup
 }
 
 type Worker struct {
@@ -128,8 +132,9 @@ func (w *Worker) downloadM3u8List(j *WJob) {
 		Logger.Printf("Failed to create output ts file - %s - %s\n", tmpTsFile, err)
 		return
 	}
-
-	Logger.Printf("Reassembling %s\n", tmpTsFile)
+	if Debug {
+		Logger.Printf("Reassembling %s\n", tmpTsFile)
+	}
 
 	var failed bool
 	for i := 0; i < len(m3f.Segments); i++ {
@@ -145,7 +150,27 @@ func (w *Worker) downloadM3u8List(j *WJob) {
 			failed = true
 			break
 		}
-		_, err = io.Copy(out, in)
+		// Decrypt in order if we have a global key
+		if len(m3f.GlobalKey) > 0 {
+			iv := m3f.IV
+			if len(iv) == 0 {
+				// An EXT-X-KEY tag that does not have an IV attribute indicates
+				// that the Media Sequence Number is to be used as the IV when
+				// decrypting a Media Segment, by putting its big-endian binary
+				// representation into a 16-octet (128-bit) buffer and padding
+				// (on the left) with zeros.
+				buf := make([]byte, 4)
+				binary.BigEndian.PutUint32(buf, uint32(i+1))
+				iv = append(make([]byte, 12), buf...)
+			}
+			err = aesDecrypt(in, out, m3f.GlobalKey, iv)
+			if Debug {
+				Logger.Printf("Segment %d decrypted, error: %v\n", i, err)
+			}
+		} else {
+			_, err = io.Copy(out, in)
+		}
+
 		in.Close()
 		if err != nil {
 			Logger.Println(err)
@@ -215,12 +240,18 @@ func (w *Worker) downloadM3u8Segment(j *WJob) {
 	}
 	defer out.Close()
 
+	// We can't decrypt each segment if we have a global key.
+	// In the case of a global key, segments bave to be decrypted
+	// in order
+
 	_, err = io.Copy(out, resp.Body)
 	if err != nil {
 		Logger.Println("error copying resp body to file", err)
 		return
 	}
-	Logger.Println("saved", destination)
+	if Debug {
+		Logger.Println("saved", destination)
+	}
 }
 
 func segmentTmpPath(path, filename string, pos int) string {

@@ -21,6 +21,7 @@ var (
 	serverPort     = flag.Int("server_port", 13535, "The port to run the http server on.")
 	serverMode     = flag.Bool("server", false, "Enable running a local web server (not working yet).")
 	dlRootDir      = flag.String("root_dir", "/tmp", "The root dir to download files to")
+	mp4Conv        = flag.Bool("mp4", true, "should try to convert to mp4")
 )
 
 func m3u8ArgCheck() {
@@ -54,9 +55,9 @@ func main() {
 		job := &m3u8.WJob{
 			Type:          m3u8.ListDL,
 			URL:           *m3u8Url,
-			SkipConverter: true,
+			SkipConverter: !*mp4Conv,
 			DestPath:      pathToUse,
-			Filename:      "downloadedfile"}
+			Filename:      *outputFileName}
 		m3u8.DlChan <- job
 		close(m3u8.DlChan)
 		w.Wait()
