@@ -3,8 +3,8 @@ package main
 import (
 	"flag"
 	"fmt"
-	"log"
 	"os"
+	"sync"
 
 	"github.com/mattetti/m3u8Grabber/m3u8"
 	"github.com/mattetti/m3u8Grabber/server"
@@ -48,11 +48,18 @@ func main() {
 	}
 
 	if *m3u8Url != "" {
-		err = m3u8.DownloadM3u8ContentWithRetries(*m3u8Url, pathToUse, *outputFileName, *httpProxy, *socksProxy, 0)
-		if err != nil {
-			log.Printf("Error downloading %s, error: %s\n", *m3u8Url, err)
-			os.Exit(2)
-		}
+		w := &sync.WaitGroup{}
+		stopChan := make(chan bool)
+		m3u8.LaunchWorkers(w, stopChan)
+		job := &m3u8.WJob{
+			Type:          m3u8.ListDL,
+			URL:           *m3u8Url,
+			SkipConverter: true,
+			DestPath:      pathToUse,
+			Filename:      "downloadedfile"}
+		m3u8.DlChan <- job
+		close(m3u8.DlChan)
+		w.Wait()
 	}
 
 	// server mode

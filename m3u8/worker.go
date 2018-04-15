@@ -41,12 +41,13 @@ func LaunchWorkers(wg *sync.WaitGroup, stop <-chan bool) {
 }
 
 type WJob struct {
-	Type     WJobType
-	URL      string
-	DestPath string
-	Filename string
-	Pos      int
-	wg       *sync.WaitGroup
+	Type          WJobType
+	SkipConverter bool
+	URL           string
+	DestPath      string
+	Filename      string
+	Pos           int
+	wg            *sync.WaitGroup
 }
 
 type Worker struct {
@@ -59,9 +60,12 @@ type Worker struct {
 func (w *Worker) Work() {
 	Logger.Printf("worker %d is ready for action\n", w.id)
 	if w.master {
+		w.wg.Add(1)
 		for msg := range DlChan {
 			w.dispatch(msg)
 		}
+		close(segChan)
+		w.wg.Done()
 	} else {
 		for msg := range segChan {
 			w.dispatch(msg)
@@ -124,7 +128,8 @@ func (w *Worker) downloadM3u8List(j *WJob) {
 		Logger.Printf("Failed to create output ts file - %s - %s\n", tmpTsFile, err)
 		return
 	}
-	Logger.Printf("Preparing to convert to %s\n", mp4Path)
+
+	Logger.Printf("Reassembling %s\n", tmpTsFile)
 
 	var failed bool
 	for i := 0; i < len(m3f.Segments); i++ {
@@ -159,6 +164,12 @@ func (w *Worker) downloadM3u8List(j *WJob) {
 		return
 	}
 
+	if j.SkipConverter {
+		Logger.Printf("Content available at %s\n", tmpTsFile)
+		return
+	}
+
+	Logger.Printf("Preparing to convert to %s\n", mp4Path)
 	if err := TsToMp4(tmpTsFile, mp4Path); err != nil {
 		Logger.Println("ts to mp4 error", err)
 		return

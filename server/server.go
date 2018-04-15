@@ -33,7 +33,6 @@ type dlRequest struct {
 
 func (j *dlRequest) Download() {
 	//log.Printf("job: %#v\n", j)
-	//return m3u8.DownloadM3u8ContentWithRetries(j.Url, j.Path, j.Filename, httpProxy, socksProxy, 0)
 	m3u8.DlChan <- &m3u8.WJob{Type: m3u8.ListDL, URL: j.Url, DestPath: j.Path, Filename: j.Filename}
 }
 

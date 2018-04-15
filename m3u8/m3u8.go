@@ -20,6 +20,8 @@ type M3u8File struct {
 	Url string
 	// urls of the all the segments
 	Segments []string
+	// Key is the m3u8 entry that describes the encryption
+	Key string
 }
 
 type M3u8Seg struct {
@@ -61,6 +63,12 @@ func (f *M3u8File) getSegments(httpProxy, socksProxy string) error {
 
 	if m3u8Lines[0] != "#EXTM3U" {
 		return errors.New(f.Url + "is not a valid m3u8 file")
+	}
+	for _, l := range m3u8Lines {
+		if strings.HasPrefix(l, "#EXT-X-KEY:") {
+			Logger.Println("This m3u8 contains encrypted data and probably won't download properly:", l[11:])
+			f.Key = l
+		}
 	}
 
 	url, err := url.Parse(f.Url)
