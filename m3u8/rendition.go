@@ -1,7 +1,6 @@
 package m3u8
 
 import (
-	"fmt"
 	"strconv"
 	"strings"
 )
@@ -95,7 +94,6 @@ func ExtractRendition(l string) Rendition {
 				data = data[idx+1:]
 			}
 		}
-		fmt.Println(key, "->", value)
 		switch key {
 		case "PROGRAM-ID":
 			alt.ProgramID, _ = strconv.Atoi(value)
