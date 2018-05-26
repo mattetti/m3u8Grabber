@@ -25,6 +25,8 @@ type M3u8File struct {
 	GlobalKey []byte
 	// IV is the AES IV is specified
 	IV []byte
+	// Renditions in case the file has different versions
+	Renditions []Rendition
 }
 
 type M3u8Seg struct {
@@ -36,11 +38,7 @@ type M3u8Seg struct {
 }
 
 func (f *M3u8File) getSegments(httpProxy, socksProxy string) error {
-	//transport, err := customTransport(httpProxy, socksProxy)
-	//if err != nil {
-	//return err
-	//}
-	client := &http.Client{} //Transport: transport}
+	client := &http.Client{}
 	response, err := client.Get(f.Url)
 	if err != nil {
 		Logger.Printf("Couldn't download url: %s - %s\n", f.Url, err)
@@ -59,10 +57,23 @@ func (f *M3u8File) getSegments(httpProxy, socksProxy string) error {
 	if m3u8Lines[0] != "#EXTM3U" {
 		return errors.New(f.Url + "is not a valid m3u8 file")
 	}
-	for _, l := range m3u8Lines {
+	var l string
+	for i := 0; i < len(m3u8Lines); i++ {
+		l = m3u8Lines[i]
 		if strings.HasPrefix(l, "#EXT-X-KEY:") {
 			Logger.Println("This m3u8 contains encrypted data:", l[11:])
 			f.ExtXKey = l
+		}
+		// this isn't a normal m3u8 file, we have multiple variations
+		if strings.HasPrefix(l, altStreamMarker) {
+			if len(f.Renditions) < 1 {
+				f.Renditions = []Rendition{}
+			}
+			// TODO: extract attributes
+			rendition := ExtractRendition(l)
+			i++
+			rendition.URL = m3u8Lines[i]
+			f.Renditions = append(f.Renditions, rendition)
 		}
 	}
 
@@ -121,4 +132,12 @@ func (f *M3u8File) getSegments(httpProxy, socksProxy string) error {
 	}
 	f.Segments = segmentUrls
 	return nil
+}
+
+func splitAndTrimCommaList(str string) []string {
+	list := strings.Split(str, ",")
+	for i, item := range list {
+		list[i] = strings.TrimSpace(item)
+	}
+	return list
 }
