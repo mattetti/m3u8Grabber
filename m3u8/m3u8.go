@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"sort"
 	"strings"
 )
 
@@ -69,7 +70,6 @@ func (f *M3u8File) getSegments(httpProxy, socksProxy string) error {
 			if len(f.Renditions) < 1 {
 				f.Renditions = []Rendition{}
 			}
-			// TODO: extract attributes
 			rendition := ExtractRendition(l)
 			i++
 			rendition.URL = m3u8Lines[i]
@@ -112,6 +112,27 @@ func (f *M3u8File) getSegments(httpProxy, socksProxy string) error {
 		}
 		// TODO: support IV
 		// TODO: support multiple keys, one per entry
+	}
+
+	// if we have multiple versions, pick the highest
+	// TODO: make that a param/option
+	if len(f.Renditions) > 0 {
+		Logger.Printf("Found %d renditions, picking the highest resolution\n", len(f.Renditions))
+		// sort the renditions so we get the biggest first
+		sort.Slice(f.Renditions, func(i, j int) bool {
+			return f.Renditions[i].Bandwidth > f.Renditions[j].Bandwidth
+		})
+		Logger.Printf("Chosen rendition: %+v\n", f.Renditions[0])
+		nf := &M3u8File{Url: f.Renditions[0].URL}
+		if err := nf.getSegments(httpProxy, socksProxy); err != nil {
+			return err
+		}
+		f.ExtXKey = nf.ExtXKey
+		f.Url = nf.Url
+		f.Segments = nf.Segments
+		f.GlobalKey = nf.GlobalKey
+		f.IV = nf.IV
+		return nil
 	}
 
 	url, err := url.Parse(f.Url)
