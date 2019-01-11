@@ -6,7 +6,9 @@ defined in a m3u8 file into an mp4 file. Full hls protocol isn't implemented.
 ## Requirements
 
 OS: unix, windows
+
 Go: https://golang.org
+
 Libraries: ffmpeg needs to be installed and available (for conversion).
 
 ## Usage
