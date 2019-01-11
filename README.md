@@ -6,10 +6,12 @@ defined in a m3u8 file into an mp4 file. Full hls protocol isn't implemented.
 ## Requirements
 
 OS: unix, windows
+Go: https://golang.org
 Libraries: ffmpeg needs to be installed and available (for conversion).
 
 ## Usage
 
+$ go build .
 $ m3u8Grabber --m3u8="http://someCompatibleM3U8.url" --output="coolStuff"
 
 The grabber can also be run as a server and receives downloads via HTTP requests (undocumented).
