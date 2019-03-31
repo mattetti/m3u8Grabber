@@ -26,8 +26,17 @@ var (
 
 func m3u8ArgCheck() {
 	if *m3u8Url == "" && !*serverMode {
-		fmt.Fprint(os.Stderr, "You have to pass a m3u8 url file using the right flag or enable the server mode.\n")
-		os.Exit(2)
+		if len(os.Args) < 2 {
+			fmt.Fprint(os.Stderr, "You have to pass a m3u8 url file using the right flag or enable the server mode.\n")
+			os.Exit(2)
+			return
+		} else {
+			// backup in case the user didn't use flags but passed params instead
+			*m3u8Url = os.Args[1]
+			if *outputFileName == "downloaded_video" && len(os.Args) > 2 {
+				*outputFileName = os.Args[2]
+			}
+		}
 	}
 }
 
