@@ -111,6 +111,10 @@ func (w *Worker) downloadM3u8List(j *WJob) {
 	}
 	Logger.Printf("[%d] waiting for the segments to be downloaded", w.id)
 	j.wg.Wait()
+	if len(m3f.Segments) == 0 {
+		Logger.Printf("ERROR: invalid m3u8 file, no segments to download found")
+		return
+	}
 	// put the segments together
 	Logger.Printf("All segments (%d) downloaded!\n", len(m3f.Segments))
 	// assemble
