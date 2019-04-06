@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/hailiang/gosocks"
+	"h12.io/socks"
 )
 
 var (
