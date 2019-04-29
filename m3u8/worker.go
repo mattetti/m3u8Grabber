@@ -2,6 +2,7 @@ package m3u8
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -30,6 +31,9 @@ const (
 
 // LaunchWorkers starts download workers
 func LaunchWorkers(wg *sync.WaitGroup, stop <-chan bool) {
+	// we need to recreate the dlChan and the segChan in case we want to restart workers.
+	DlChan = make(chan *WJob)
+	segChan = make(chan *WJob)
 	// the master worker downloads one full m3u8 at a time but
 	// segments are downloaded concurrently
 	masterW := &Worker{id: 0, wg: wg, master: true}
@@ -48,6 +52,8 @@ type WJob struct {
 	DestPath      string
 	Filename      string
 	Pos           int
+	// Err gets populated if something goes wrong while processing the job
+	Err error
 	// Key is the AES segment key if available
 	Key []byte
 	IV  []byte
@@ -112,7 +118,8 @@ func (w *Worker) downloadM3u8List(j *WJob) {
 	Logger.Printf("[%d] waiting for the segments to be downloaded", w.id)
 	j.wg.Wait()
 	if len(m3f.Segments) == 0 {
-		Logger.Printf("ERROR: invalid m3u8 file, no segments to download found")
+		j.Err = errors.New("invalid m3u8 file, no segments to download found")
+		Logger.Printf("ERROR: %s", j.Err)
 		return
 	}
 	// put the segments together
@@ -133,7 +140,8 @@ func (w *Worker) downloadM3u8List(j *WJob) {
 	mp4Path := filepath.Join(j.DestPath, j.Filename) + ".mp4"
 	out, err := os.Create(tmpTsFile)
 	if err != nil {
-		Logger.Printf("Failed to create output ts file - %s - %s\n", tmpTsFile, err)
+		j.Err = fmt.Errorf("failed to create output ts file - %s - %s", tmpTsFile, err)
+		Logger.Println(j.Err)
 		return
 	}
 	if Debug {
@@ -200,7 +208,8 @@ func (w *Worker) downloadM3u8List(j *WJob) {
 
 	Logger.Printf("Preparing to convert to %s\n", mp4Path)
 	if err := TsToMp4(tmpTsFile, mp4Path); err != nil {
-		Logger.Println("ts to mp4 error", err)
+		j.Err = fmt.Errorf("mp4 conversion error error - %v", err)
+		Logger.Println(j.Err)
 		return
 	}
 	Logger.Printf("Episode available at %s\n", mp4Path)
@@ -233,13 +242,15 @@ func (w *Worker) downloadM3u8Segment(j *WJob) {
 	}
 
 	if err := os.MkdirAll(j.DestPath, os.ModePerm); err != nil {
-		Logger.Printf("m3u8 download failed - %s\n", err)
+		j.Err = fmt.Errorf("m3u8 download failed, couldn't create the destination path - %v", err)
+		Logger.Println(j.Err)
 		return
 	}
 
 	out, err := os.Create(destination)
 	if err != nil {
-		Logger.Println("error creating file", err)
+		j.Err = fmt.Errorf("error creating destination file - %v", err)
+		Logger.Println(j.Err)
 		return
 	}
 	defer out.Close()
@@ -250,7 +261,8 @@ func (w *Worker) downloadM3u8Segment(j *WJob) {
 
 	_, err = io.Copy(out, resp.Body)
 	if err != nil {
-		Logger.Println("error copying resp body to file", err)
+		j.Err = fmt.Errorf("error copying resp body to file - %v", err)
+		Logger.Println(j.Err)
 		return
 	}
 	if Debug {
