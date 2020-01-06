@@ -6,7 +6,6 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
-	"net/url"
 	"os"
 	"sort"
 	"strings"
@@ -122,8 +121,14 @@ func (f *M3u8File) getSegments(httpProxy, socksProxy string) error {
 		sort.Slice(f.Renditions, func(i, j int) bool {
 			return f.Renditions[i].Bandwidth > f.Renditions[j].Bandwidth
 		})
+		// handle relative paths
+		if !strings.HasPrefix(f.Renditions[0].URL, "http") {
+			lastSlash := strings.LastIndex(f.Url, "/")
+			f.Renditions[0].URL = f.Url[:lastSlash+1] + f.Renditions[0].URL
+		}
 		Logger.Printf("Chosen rendition: %+v\n", f.Renditions[0])
 		nf := &M3u8File{Url: f.Renditions[0].URL}
+
 		if err := nf.getSegments(httpProxy, socksProxy); err != nil {
 			return err
 		}
@@ -135,18 +140,15 @@ func (f *M3u8File) getSegments(httpProxy, socksProxy string) error {
 		return nil
 	}
 
-	url, err := url.Parse(f.Url)
-	if err != nil {
-		return err
-	}
-
 	var segmentUrls []string
 	for _, line := range m3u8Lines {
-		// trim each line (working on a copu)
+		// trim each line
 		line = strings.TrimSpace(line)
 		if line != "" && !strings.HasPrefix(line, "#") {
+			// deal with relative paths
 			if !strings.HasPrefix(line, "http") {
-				line = fmt.Sprintf("%s://%s/%s", url.Scheme, url.Host, line)
+				lastSlash := strings.LastIndex(f.Url, "/")
+				line = f.Url[:lastSlash+1] + line
 			}
 			segmentUrls = append(segmentUrls, line)
 		}
