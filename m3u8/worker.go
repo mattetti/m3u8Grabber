@@ -113,7 +113,7 @@ func (w *Worker) downloadM3u8List(j *WJob) {
 			URL:           cc,
 			SkipConverter: true,
 			DestPath:      j.DestPath,
-			Filename:      j.Filename + "_subs"}
+			Filename:      j.Filename}
 		segChan <- ccjob
 	}
 	//
