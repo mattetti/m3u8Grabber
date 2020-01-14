@@ -104,6 +104,8 @@ func (w *Worker) dispatch(job *WJob) {
 func (w *Worker) downloadM3u8List(j *WJob) {
 	m3f := &M3u8File{Url: j.URL}
 	m3f.getSegments("", "")
+	j.Filename = CleanFilename(j.Filename)
+	j.DestPath = CleanPath(j.DestPath)
 	// Queue up the subs first
 	for _, cc := range m3f.ClosedCaptions {
 		// queue up the subtitles
@@ -118,8 +120,6 @@ func (w *Worker) downloadM3u8List(j *WJob) {
 	}
 	//
 	j.wg = &sync.WaitGroup{}
-	j.Filename = CleanFilename(j.Filename)
-	j.DestPath = CleanPath(j.DestPath)
 	for i, segURL := range m3f.Segments {
 		j.wg.Add(1)
 		segChan <- &WJob{
