@@ -4,6 +4,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strings"
 )
@@ -70,5 +71,61 @@ func TsToMkv(inTsPath, outMkvPath string) (err error) {
 		}
 	}
 
+	return err
+}
+
+// SubToSrt converts a sub file into a srt if ffmpeg supports the input format.
+func SubToSrt(inSubPath string) (err error) {
+
+	outSubPath := inSubPath[:len(inSubPath)-len(filepath.Ext(inSubPath))]
+	outSubPath += ".srt"
+
+	// Look for ffmpeg
+	var cmd *exec.Cmd
+	if runtime.GOOS == "windows" {
+		cmd = exec.Command("where", "ffmpeg")
+	} else {
+		cmd = exec.Command("which", "ffmpeg")
+	}
+	buf, err := cmd.Output()
+	if err != nil {
+		Logger.Fatal("ffmpeg wasn't found on your system, it is required to convert video files.\n" +
+			"Temp file left on your hardrive:\n" + inSubPath)
+		os.Exit(1)
+	}
+	ffmpegPath := strings.Trim(strings.Trim(string(buf), "\r\n"), "\n")
+
+	// ffmpeg flags
+	// -y overwrites without asking
+	//cmd = exec.Command(ffmpegPath, "-y", "-i", inSubPath, outSubPath)
+	cmd = exec.Command(ffmpegPath, "-y", "-i", inSubPath, outSubPath)
+
+	// Pipe out the cmd output in debug mode
+	if Debug {
+		stdout, err := cmd.StdoutPipe()
+		if err != nil {
+			return err
+		}
+		stderr, err := cmd.StderrPipe()
+		if err != nil {
+			return err
+		}
+		go io.Copy(os.Stdout, stdout)
+		go io.Copy(os.Stderr, stderr)
+	}
+
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+	if err := cmd.Wait(); err != nil {
+		Logger.Printf("ffmpeg Error: %v\n", err)
+		Logger.Println("args", cmd.Args)
+		return err
+	}
+
+	state := cmd.ProcessState
+	if !state.Success() {
+		Logger.Println("Error: something went wrong when trying to use ffmpeg")
+	}
 	return err
 }

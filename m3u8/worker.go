@@ -270,6 +270,8 @@ func (w *Worker) downloadM3u8CC(j *WJob) {
 		res.Body.Close()
 	}
 	Logger.Printf("Sub file available at %s\n", subFile)
+	// convert to srt
+	SubToSrt(subFile)
 }
 
 // downloadM3u8Segment downloads one segment of a m3u8 file
