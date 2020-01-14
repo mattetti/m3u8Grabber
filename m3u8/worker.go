@@ -27,6 +27,7 @@ const (
 	_ WJobType = iota
 	ListDL
 	FileDL
+	CCDL
 )
 
 // LaunchWorkers starts download workers
@@ -91,6 +92,8 @@ func (w *Worker) dispatch(job *WJob) {
 		w.downloadM3u8List(job)
 	case FileDL:
 		w.downloadM3u8Segment(job)
+	case CCDL:
+		w.downloadM3u8CC(job)
 	default:
 		Logger.Println("format not supported")
 		return
@@ -101,6 +104,19 @@ func (w *Worker) dispatch(job *WJob) {
 func (w *Worker) downloadM3u8List(j *WJob) {
 	m3f := &M3u8File{Url: j.URL}
 	m3f.getSegments("", "")
+	// Queue up the subs first
+	for _, cc := range m3f.ClosedCaptions {
+		// queue up the subtitles
+		// FIXME: properly support multiple subtitles for a given source
+		ccjob := &WJob{
+			Type:          CCDL,
+			URL:           cc,
+			SkipConverter: true,
+			DestPath:      j.DestPath,
+			Filename:      j.Filename + "_subs"}
+		segChan <- ccjob
+	}
+	//
 	j.wg = &sync.WaitGroup{}
 	j.Filename = CleanFilename(j.Filename)
 	j.DestPath = CleanPath(j.DestPath)
@@ -213,6 +229,47 @@ func (w *Worker) downloadM3u8List(j *WJob) {
 		return
 	}
 	Logger.Printf("Episode available at %s\n", mp4Path)
+}
+
+func (w *Worker) downloadM3u8CC(j *WJob) {
+	Logger.Printf("Downloading subtitles from %s\n", j.URL)
+	m3f := &M3u8File{Url: j.URL}
+	if err := m3f.getSegments("", ""); err != nil {
+		Logger.Printf("Failed to download CC: %v\n", err)
+	}
+	if len(m3f.Segments) < 1 {
+		Logger.Printf("Empty sub playlist")
+		return
+	}
+	subFile := j.DestPath + "/" + j.Filename + filepath.Ext(m3f.Segments[0])
+	if _, err := os.Stat(j.DestPath); err != nil {
+		if os.IsNotExist(err) {
+			if err := os.MkdirAll(j.DestPath, os.ModePerm); err != nil {
+				Logger.Printf("Failed to create path to %s - %s\n", j.DestPath, err)
+			}
+		} else {
+			Logger.Printf("Failed to create the sub file: %s - %s", subFile, err)
+			return
+		}
+	}
+	out, err := os.Create(subFile)
+	if err != nil {
+		Logger.Printf("Failed to create the sub file: %s - %s", subFile, err)
+		return
+	}
+	for _, segURL := range m3f.Segments {
+		res, err := http.Get(segURL)
+		if err != nil {
+			Logger.Printf("Failed to get subtitle part %s, %v\n", segURL, err)
+			return
+		}
+		_, err = io.Copy(out, res.Body)
+		if err != nil {
+			Logger.Printf("Failed to append to the subtitle file, %v\n", err)
+		}
+		res.Body.Close()
+	}
+	Logger.Printf("Sub file available at %s\n", subFile)
 }
 
 // downloadM3u8Segment downloads one segment of a m3u8 file

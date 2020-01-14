@@ -27,6 +27,14 @@ type M3u8File struct {
 	IV []byte
 	// Renditions in case the file has different versions
 	Renditions []Rendition
+
+	// ClosedCaptions - The value can be either a quoted-string or an
+	// enumerated-string with the value NONE.  If the value is a quoted-string,
+	// it MUST match the value of the GROUP-ID attribute of an EXT-X-MEDIA tag
+	// elsewhere in the Playlist whose TYPE attribute is CLOSED-CAPTIONS, and
+	// indicates the set of closed-caption Renditions that can be used when
+	// playing the presentation.
+	ClosedCaptions []string
 }
 
 type M3u8Seg struct {
@@ -54,8 +62,8 @@ func (f *M3u8File) getSegments(httpProxy, socksProxy string) error {
 	m3u8content := string(contents)
 	m3u8Lines := strings.Split(strings.TrimSpace(m3u8content), "\n")
 
-	if m3u8Lines[0] != "#EXTM3U" {
-		return errors.New(f.Url + "is not a valid m3u8 file")
+	if !strings.HasPrefix(m3u8Lines[0], "#EXTM3U") {
+		return errors.New(f.Url + " is not a valid m3u8 file")
 	}
 	var l string
 	for i := 0; i < len(m3u8Lines); i++ {
@@ -73,6 +81,19 @@ func (f *M3u8File) getSegments(httpProxy, socksProxy string) error {
 			i++
 			rendition.URL = m3u8Lines[i]
 			f.Renditions = append(f.Renditions, rendition)
+		}
+		if strings.HasPrefix(l, subsStreamMarker) {
+			idx := strings.Index(l, ",URI=")
+			if idx > 0 {
+				tail := l[idx+6:]
+				uri := tail[:strings.IndexByte(tail, '"')]
+				if !strings.HasPrefix(uri, "http") {
+					lastSlash := strings.LastIndex(f.Url, "/")
+					uri = f.Url[:lastSlash+1] + uri
+				}
+				f.ClosedCaptions = append(f.ClosedCaptions, uri)
+				Logger.Printf("Found subtitles at %s\n", uri)
+			}
 		}
 	}
 
@@ -126,8 +147,15 @@ func (f *M3u8File) getSegments(httpProxy, socksProxy string) error {
 			lastSlash := strings.LastIndex(f.Url, "/")
 			f.Renditions[0].URL = f.Url[:lastSlash+1] + f.Renditions[0].URL
 		}
+		for n, cc := range f.Renditions[0].ClosedCaptions {
+			if !strings.HasPrefix(cc, "http") {
+				lastSlash := strings.LastIndex(f.Url, "/")
+				f.Renditions[0].ClosedCaptions[n] = f.Url[:lastSlash+1] + cc
+			}
+		}
 		Logger.Printf("Chosen rendition: %+v\n", f.Renditions[0])
-		nf := &M3u8File{Url: f.Renditions[0].URL}
+		nf := &M3u8File{Url: f.Renditions[0].URL,
+			ClosedCaptions: f.Renditions[0].ClosedCaptions}
 
 		if err := nf.getSegments(httpProxy, socksProxy); err != nil {
 			return err
@@ -137,6 +165,9 @@ func (f *M3u8File) getSegments(httpProxy, socksProxy string) error {
 		f.Segments = nf.Segments
 		f.GlobalKey = nf.GlobalKey
 		f.IV = nf.IV
+		for _, cc := range nf.ClosedCaptions {
+			f.ClosedCaptions = append(f.ClosedCaptions, cc)
+		}
 		return nil
 	}
 
