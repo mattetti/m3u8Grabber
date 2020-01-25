@@ -140,6 +140,8 @@ func (w *Worker) downloadM3u8List(j *WJob) {
 	}
 	// put the segments together
 	Logger.Printf("All segments (%d) downloaded!\n", len(m3f.Segments))
+	Logger.Printf("Rebuilding the file now, this step might take a little while.")
+
 	// assemble
 	tmpTsFile := j.DestPath + "/" + j.Filename + ".ts"
 	if _, err := os.Stat(j.DestPath); err != nil {
@@ -153,6 +155,7 @@ func (w *Worker) downloadM3u8List(j *WJob) {
 			return
 		}
 	}
+
 	mp4Path := filepath.Join(j.DestPath, j.Filename) + ".mp4"
 	out, err := os.Create(tmpTsFile)
 	if err != nil {
@@ -165,19 +168,14 @@ func (w *Worker) downloadM3u8List(j *WJob) {
 	}
 
 	var failed bool
+
 	for i := 0; i < len(m3f.Segments); i++ {
-		file := segmentTmpPath(j.DestPath, j.Filename, i)
-		if _, err := os.Stat(file); err != nil {
-			Logger.Printf("skipping opening %s because %v\n", file, err)
+		segmentFile := segmentTmpPath(j.Filename, i)
+		if _, err := os.Stat(segmentFile); err != nil {
+			Logger.Printf("skipping opening %s because %v\n", segmentFile, err)
 			continue
 		}
 
-		in, err := os.Open(file)
-		if err != nil {
-			Logger.Printf("Can't open %s because %s\n", file, err)
-			failed = true
-			break
-		}
 		// Decrypt in order if we have a global key
 		if len(m3f.GlobalKey) > 0 {
 			iv := m3f.IV
@@ -191,13 +189,63 @@ func (w *Worker) downloadM3u8List(j *WJob) {
 				binary.BigEndian.PutUint32(buf, uint32(i+1))
 				iv = append(make([]byte, 12), buf...)
 			}
-			err = aesDecrypt(in, out, m3f.GlobalKey, iv)
+			// create a temp file to decrypt to and then switch our input to
+			// this decrypted file.
+			decryptedFilePath := segmentFile + ".dec"
+			tOut, err := os.Create(decryptedFilePath)
+			if err != nil {
+				Logger.Printf("Can't create %s because %s\n", decryptedFilePath, err)
+				failed = true
+				break
+			}
+
+			in, err := os.Open(segmentFile)
+			if err != nil {
+				Logger.Printf("Can't open %s because %s\n", segmentFile, err)
+				failed = true
+				break
+			}
+
+			if Debug {
+				Logger.Printf("Decrypting segment %d\n", i)
+			}
+
+			err = aesDecrypt(in, tOut, m3f.GlobalKey, iv)
 			if Debug {
 				Logger.Printf("Segment %d decrypted, error: %v\n", i, err)
 			}
-		} else {
-			_, err = io.Copy(out, in)
+			tOut.Sync()
+			tOut.Close()
+			in.Close()
+			err = os.Remove(segmentFile)
+			if err != nil {
+				Logger.Println("failed to remove encrypted", segmentFile, err)
+			}
+			// rename so the decrypted file replaces the original segment
+			os.Rename(decryptedFilePath, segmentFile)
 		}
+
+		// TODO: more robust check if twe are dealing with an audio segment
+		if strings.ToLower(filepath.Ext(m3f.Segments[0])) == ".aac" {
+			// we can't append ADTS files together, we have to convert the audio to
+			// aac first.
+			// We used to do that on the assembled file but that doesn't work with audio only m3u8 since you can't simply concatenate the audio adts files.
+			if Debug {
+				Logger.Printf("Converting segment %d to AAC\n", i)
+			}
+			if err := AdtsToAac(segmentFile); err != nil {
+				Logger.Printf(err.Error())
+				break
+			}
+		}
+
+		in, err := os.Open(segmentFile)
+		if err != nil {
+			Logger.Println(err)
+			failed = true
+			break
+		}
+		_, err = io.Copy(out, in)
 
 		in.Close()
 		if err != nil {
@@ -206,14 +254,13 @@ func (w *Worker) downloadM3u8List(j *WJob) {
 			break
 		}
 		out.Sync()
-		err = os.Remove(file)
+		err = os.Remove(segmentFile)
 		if err != nil {
-			Logger.Println("failed to remove", file, err)
+			Logger.Println("failed to remove", segmentFile, err)
 		}
 	}
 	out.Close()
 	if failed {
-		out.Close()
 		return
 	}
 
@@ -271,7 +318,9 @@ func (w *Worker) downloadM3u8CC(j *WJob) {
 	}
 	Logger.Printf("Sub file available at %s\n", subFile)
 	// convert to srt
-	SubToSrt(subFile)
+	if err := SubToSrt(subFile); err != nil {
+		Logger.Printf("Failed to convert the subtitles - %v\n", err)
+	}
 }
 
 // downloadM3u8Segment downloads one segment of a m3u8 file
@@ -295,7 +344,7 @@ func (w *Worker) downloadM3u8Segment(j *WJob) {
 		return
 	}
 
-	destination := segmentTmpPath(j.DestPath, j.Filename, j.Pos)
+	destination := segmentTmpPath(j.Filename, j.Pos)
 	if fileAlreadyExists(destination) {
 		return
 	}
@@ -315,7 +364,7 @@ func (w *Worker) downloadM3u8Segment(j *WJob) {
 	defer out.Close()
 
 	// We can't decrypt each segment if we have a global key.
-	// In the case of a global key, segments bave to be decrypted
+	// In the case of a global key, segments have to be decrypted
 	// in order
 
 	_, err = io.Copy(out, resp.Body)
@@ -329,8 +378,8 @@ func (w *Worker) downloadM3u8Segment(j *WJob) {
 	}
 }
 
-func segmentTmpPath(path, filename string, pos int) string {
-	return filepath.Join(TmpFolder, fmt.Sprintf("%s._%d", filenameCleaner.Replace(filename), pos))
+func segmentTmpPath(filename string, pos int) string {
+	return filepath.Join(TmpFolder, fmt.Sprintf("%s_%d", filenameCleaner.Replace(filename), pos))
 }
 
 func CleanFilename(name string) string {
