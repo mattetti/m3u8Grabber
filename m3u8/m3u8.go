@@ -35,6 +35,13 @@ type M3u8File struct {
 	// indicates the set of closed-caption Renditions that can be used when
 	// playing the presentation.
 	ClosedCaptions []string
+
+	Audiostreams []Audiostream
+}
+
+type Audiostream struct {
+	URI  string
+	Lang string
 }
 
 type M3u8Seg struct {
@@ -81,6 +88,27 @@ func (f *M3u8File) getSegments(httpProxy, socksProxy string) error {
 			i++
 			rendition.URL = m3u8Lines[i]
 			f.Renditions = append(f.Renditions, rendition)
+		}
+		if strings.HasPrefix(l, audioStreamMarker) {
+			// exmaple:  #EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio-aacl-64",NAME="Audio Français",LANGUAGE="fr",AUTOSELECT=YES,DEFAULT=YES,CHANNELS="2",URI="something-audio_fre=64000.m3u8"
+			var lang string
+			var uri string
+			idx := strings.Index(l, ",LANGUAGE=")
+			if idx > 0 {
+				tail := l[idx+11:]
+				lang = tail[:strings.IndexByte(tail, '"')]
+			}
+			idx = strings.Index(l, ",URI=")
+			if idx > 0 {
+				tail := l[idx+6:]
+				uri = tail[:strings.IndexByte(tail, '"')]
+				if !strings.HasPrefix(uri, "http") {
+					lastSlash := strings.LastIndex(f.Url, "/")
+					uri = f.Url[:lastSlash+1] + uri
+				}
+			}
+			Logger.Printf("Found audio stream: %s at %s\n", lang, uri)
+			f.Audiostreams = append(f.Audiostreams, Audiostream{Lang: lang, URI: uri})
 		}
 		if strings.HasPrefix(l, subsStreamMarker) {
 			idx := strings.Index(l, ",URI=")

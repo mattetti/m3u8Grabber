@@ -6,8 +6,9 @@ import (
 )
 
 const (
-	altStreamMarker  = "#EXT-X-STREAM-INF"
-	subsStreamMarker = "#EXT-X-MEDIA:TYPE=SUBTITLES"
+	altStreamMarker   = "#EXT-X-STREAM-INF"
+	subsStreamMarker  = "#EXT-X-MEDIA:TYPE=SUBTITLES"
+	audioStreamMarker = "#EXT-X-MEDIA:TYPE=AUDIO"
 )
 
 // Rendition is an alternative version of a stream.
