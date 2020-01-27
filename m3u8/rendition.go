@@ -54,6 +54,23 @@ type Rendition struct {
 	// closed-caption Renditions that can be used when playing the presentation.
 	ClosedCaptions []string
 	URL            string
+	// Audio - The value is a quoted-string. It MUST match the value of the
+	// GROUP-ID attribute of an EXT-X-MEDIA tag elsewhere in the Master Playlist
+	// whose TYPE attribute is AUDIO. It indicates the set of audio Renditions
+	// that SHOULD be used when playing the presentation. (optional)
+	Audio string
+	// Video - The value is a quoted-string.  It MUST match the value of the
+	// GROUP-ID attribute of an EXT-X-MEDIA tag elsewhere in the Master Playlist
+	// whose TYPE attribute is VIDEO.  It indicates the set of video Renditions
+	// that SHOULD be used when playing the presentation. (optional)
+	Video string
+
+	// FrameRate - The value is a decimal-floating-point describing the maximum
+	// frame rate for all the video in the Variant Stream, rounded to 3 decimal
+	// places. The FRAME-RATE attribute is OPTIONAL but is recommended if the
+	// Variant Stream includes video.  The FRAME-RATE attribute SHOULD be
+	// included if any video in a Variant Stream exceeds 30 frames per second.
+	FrameRate float64
 }
 
 func ExtractRendition(l string) Rendition {
@@ -61,55 +78,29 @@ func ExtractRendition(l string) Rendition {
 	if !strings.HasPrefix(l, altStreamMarker) {
 		return alt
 	}
-	data := l[len(altStreamMarker)+1:]
-	idx := -1
-	for {
-		// find the next end of key
-		idx = strings.IndexByte(data, '=')
-		if idx < 0 {
-			break
-		}
-		key := data[:idx]
-		data = data[idx+1:]
-		var value string
-		// check if we have a quoted string
-		if data[0] == '"' {
-			idx = strings.IndexByte(data[1:], '"')
-			if idx < 0 {
-				break
-			}
-			idx++ // because we looked up starting at index 1
-			value = data[1:idx]
-
-			data = data[idx+1:]
-			if len(data) > 1 && data[0] == ',' {
-				data = data[1:]
-			}
-		} else {
-			idx = strings.IndexByte(data, ',')
-			if idx < 0 {
-				idx = len(data)
-			}
-			value = data[:idx]
-
-			if idx < len(data) {
-				data = data[idx+1:]
-			}
-		}
-		switch key {
+	for k, v := range decodeEqParamLine(l[len(altStreamMarker):]) {
+		switch k {
+		case "AUDIO":
+			alt.Audio = v
+		case "VIDEO":
+			alt.Video = v
+		case "URI":
+			alt.URL = v
 		case "PROGRAM-ID":
-			alt.ProgramID, _ = strconv.Atoi(value)
+			alt.ProgramID, _ = strconv.Atoi(v)
 		case "BANDWIDTH":
-			alt.Bandwidth, _ = strconv.Atoi(value)
+			alt.Bandwidth, _ = strconv.Atoi(v)
 		case "RESOLUTION":
-			alt.Resolution = value
+			alt.Resolution = v
 		case "CODECS":
-			alt.Codecs = splitAndTrimCommaList(value)
+			alt.Codecs = splitAndTrimCommaList(v)
+		case "FRAME-RATE":
+			alt.FrameRate, _ = strconv.ParseFloat(v, 32)
 		case "CLOSED-CAPTIONS":
-			if value == "NONE" {
+			if v == "NONE" {
 				continue
 			}
-			alt.ClosedCaptions = splitAndTrimCommaList(value)
+			alt.ClosedCaptions = splitAndTrimCommaList(v)
 		}
 	}
 

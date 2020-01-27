@@ -7,12 +7,16 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 )
 
 var Debug = false
 var Logger = log.New(os.Stdout, "", log.Ldate|log.Ltime|log.Lshortfile)
+
+var kvSplitByEqRegex = regexp.MustCompile(`([a-zA-Z0-9_-]+)=("[^"]+"|[^",]+)`)
 
 type M3u8File struct {
 	Url string
@@ -39,9 +43,31 @@ type M3u8File struct {
 	Audiostreams []Audiostream
 }
 
+// HasDefaultExtAudioStream returns true + the stream if the m3u8 file has an
+// external audio stream set to default. This is used when the audio content
+// isn't available in the main video file.
+func (m *M3u8File) HasDefaultExtAudioStream() (bool, *Audiostream) {
+	if m == nil {
+		return false, nil
+	}
+	for _, s := range m.Audiostreams {
+		if s.Default && s.URI != "" {
+			return true, &s
+		}
+	}
+	return false, nil
+}
+
+// Audiostream represents an audio track example:
+// GROUP-ID="audio-aacl-64",NAME="Audio
+// Français",LANGUAGE="fr",AUTOSELECT=YES,DEFAULT=YES,CHANNELS="2",URI="something-audio_fre=64000.m3u8"
 type Audiostream struct {
-	URI  string
-	Lang string
+	GroupID  string
+	Name     string
+	URI      string
+	Lang     string
+	Default  bool
+	Channels int
 }
 
 type M3u8Seg struct {
@@ -50,6 +76,11 @@ type M3u8Seg struct {
 	Response *http.Response
 	// Download retries before giving up
 	Retries int
+}
+
+// Process fetches the m3u8 file and processes it.
+func (f *M3u8File) Process() error {
+	return f.getSegments("", "")
 }
 
 func (f *M3u8File) getSegments(httpProxy, socksProxy string) error {
@@ -79,7 +110,8 @@ func (f *M3u8File) getSegments(httpProxy, socksProxy string) error {
 			Logger.Println("This m3u8 contains encrypted data:", l[11:])
 			f.ExtXKey = l
 		}
-		// this isn't a normal m3u8 file, we have multiple variations
+		// this isn't a standard m3u8 file, we have multiple variants of the
+		// stream.
 		if strings.HasPrefix(l, altStreamMarker) {
 			if len(f.Renditions) < 1 {
 				f.Renditions = []Rendition{}
@@ -90,27 +122,42 @@ func (f *M3u8File) getSegments(httpProxy, socksProxy string) error {
 			f.Renditions = append(f.Renditions, rendition)
 		}
 		if strings.HasPrefix(l, audioStreamMarker) {
-			// exmaple:  #EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio-aacl-64",NAME="Audio Français",LANGUAGE="fr",AUTOSELECT=YES,DEFAULT=YES,CHANNELS="2",URI="something-audio_fre=64000.m3u8"
-			var lang string
-			var uri string
-			idx := strings.Index(l, ",LANGUAGE=")
-			if idx > 0 {
-				tail := l[idx+11:]
-				lang = tail[:strings.IndexByte(tail, '"')]
-			}
-			idx = strings.Index(l, ",URI=")
-			if idx > 0 {
-				tail := l[idx+6:]
-				uri = tail[:strings.IndexByte(tail, '"')]
-				if !strings.HasPrefix(uri, "http") {
-					lastSlash := strings.LastIndex(f.Url, "/")
-					uri = f.Url[:lastSlash+1] + uri
+			stream := Audiostream{}
+			for k, v := range decodeEqParamLine(l[len(audioStreamMarker):]) {
+				switch k {
+				case "GROUP-ID":
+					stream.GroupID = v
+				case "NAME":
+					stream.Name = v
+				case "LANGUAGE":
+					stream.Lang = v
+				case "DEFAULT":
+					if strings.ToUpper(v) == "YES" {
+						stream.Default = true
+					}
+				case "URI":
+					stream.URI = v
+				case "CHANNELS":
+					chans, _ := strconv.ParseUint(v, 10, 32)
+					stream.Channels = int(chans)
 				}
 			}
-			Logger.Printf("Found audio stream: %s at %s\n", lang, uri)
-			f.Audiostreams = append(f.Audiostreams, Audiostream{Lang: lang, URI: uri})
+
+			if stream.URI != "" && !strings.HasPrefix(stream.URI, "http") {
+				lastSlash := strings.LastIndex(f.Url, "/")
+				stream.URI = f.Url[:lastSlash+1] + stream.URI
+			}
+
+			if stream.Default && stream.URI != "" {
+				Logger.Printf("Found default audio stream: %s (%s-%s) at %s\n", stream.GroupID, stream.Name, stream.Lang, stream.URI)
+			} else if Debug {
+				Logger.Printf("\nAudio stream: %s (%s-%s), default: %t at %s\n", stream.GroupID, stream.Name, stream.Lang, stream.Default, stream.URI)
+			}
+			f.Audiostreams = append(f.Audiostreams, stream)
 		}
+		// subtitle
 		if strings.HasPrefix(l, subsStreamMarker) {
+			// TODO: properly parse the subtitle streams
 			idx := strings.Index(l, ",URI=")
 			if idx > 0 {
 				tail := l[idx+6:]
@@ -170,16 +217,9 @@ func (f *M3u8File) getSegments(httpProxy, socksProxy string) error {
 		sort.Slice(f.Renditions, func(i, j int) bool {
 			return f.Renditions[i].Bandwidth > f.Renditions[j].Bandwidth
 		})
-		// handle relative paths
-		if !strings.HasPrefix(f.Renditions[0].URL, "http") {
-			lastSlash := strings.LastIndex(f.Url, "/")
-			f.Renditions[0].URL = f.Url[:lastSlash+1] + f.Renditions[0].URL
-		}
+		f.Renditions[0].URL = makeURLAbsolute(f.Renditions[0].URL, f.Url)
 		for n, cc := range f.Renditions[0].ClosedCaptions {
-			if !strings.HasPrefix(cc, "http") {
-				lastSlash := strings.LastIndex(f.Url, "/")
-				f.Renditions[0].ClosedCaptions[n] = f.Url[:lastSlash+1] + cc
-			}
+			f.Renditions[0].ClosedCaptions[n] = makeURLAbsolute(cc, f.Url)
 		}
 		Logger.Printf("Chosen rendition: %+v\n", f.Renditions[0])
 		nf := &M3u8File{Url: f.Renditions[0].URL,
@@ -205,10 +245,7 @@ func (f *M3u8File) getSegments(httpProxy, socksProxy string) error {
 		line = strings.TrimSpace(line)
 		if line != "" && !strings.HasPrefix(line, "#") {
 			// deal with relative paths
-			if !strings.HasPrefix(line, "http") {
-				lastSlash := strings.LastIndex(f.Url, "/")
-				line = f.Url[:lastSlash+1] + line
-			}
+			line = makeURLAbsolute(line, f.Url)
 			segmentUrls = append(segmentUrls, line)
 		}
 	}
@@ -222,4 +259,22 @@ func splitAndTrimCommaList(str string) []string {
 		list[i] = strings.TrimSpace(item)
 	}
 	return list
+}
+
+// split a line of arguments with key=value format
+func decodeEqParamLine(line string) map[string]string {
+	out := make(map[string]string)
+	for _, kv := range kvSplitByEqRegex.FindAllStringSubmatch(line, -1) {
+		k, v := kv[1], kv[2]
+		out[k] = strings.Trim(v, ` "`)
+	}
+	return out
+}
+
+func makeURLAbsolute(uri, refURL string) string {
+	if !strings.HasPrefix(uri, "http") {
+		lastSlash := strings.LastIndex(refURL, "/")
+		uri = refURL[:lastSlash+1] + uri
+	}
+	return uri
 }

@@ -112,24 +112,43 @@ func AdtsToAac(path string) error {
 }
 
 // TsToMp4 converts a mp4/aac TS file into a MKV file using ffmeg.
-func TsToMp4(inTsPath, outMp4Path string) error {
+func TsToMp4(inTsPath []string, outMp4Path string) error {
 	Logger.Println("converting to mp4")
 	return TsToMkv(inTsPath, outMp4Path)
 }
 
 // TsToMkv converts a mp4/aac TS file into a MKV file using ffmeg.
-func TsToMkv(inTsPath, outMkvPath string) (err error) {
+func TsToMkv(inTsPaths []string, outMkvPath string) (err error) {
 	ffmpegPath, err := FfmpegPath()
 	if err != nil {
-		Logger.Fatal("ffmpeg wasn't found on your system, it is required to convert video files.\n" +
-			"Temp file left on your hardrive:\n" + inTsPath)
+		Logger.Fatalf("ffmpeg wasn't found on your system, it is required to convert video files.\n"+
+			"Temp file(s) left on your hardrive: %+v\n", inTsPaths)
 		os.Exit(1)
 	}
 
 	// ffmpeg flags
 	// -y overwrites without asking
 	//cmd = exec.Command(ffmpegPath, "-y", "-i", inTsPath, "-vcodec", "copy", "-acodec", "copy", outMkvPath)
-	cmd := exec.Command(ffmpegPath, "-y", "-i", inTsPath, "-vcodec", "copy", "-acodec", "copy", "-bsf:a", "aac_adtstoasc", outMkvPath)
+	var args []string
+	if len(inTsPaths) == 1 {
+		args = []string{"-y",
+			"-i", inTsPaths[0],
+			"-vcodec", "copy",
+			"-acodec", "copy",
+			"-bsf:a", "aac_adtstoasc",
+			outMkvPath}
+	} else {
+		args = []string{"-y"}
+		for _, path := range inTsPaths {
+			args = append(args, "-i")
+			args = append(args, path)
+		}
+		args = append(args, []string{
+			"-vcodec", "copy",
+			"-acodec", "copy",
+			"-bsf:a", "aac_adtstoasc", outMkvPath}...)
+	}
+	cmd := exec.Command(ffmpegPath, args...)
 
 	// Pipe out the cmd output in debug mode
 	if Debug {
@@ -158,9 +177,11 @@ func TsToMkv(inTsPath, outMkvPath string) (err error) {
 	if !state.Success() {
 		Logger.Println("Error: something went wrong when trying to use ffmpeg")
 	} else {
-		err = os.Remove(inTsPath)
-		if err != nil {
-			Logger.Println("Couldn't delete temp file: " + inTsPath + "\n Please delete manually.\n")
+		for _, path := range inTsPaths {
+			err = os.Remove(path)
+			if err != nil {
+				Logger.Println("Couldn't delete temp file: " + path + "\n Please delete manually.\n")
+			}
 		}
 	}
 
