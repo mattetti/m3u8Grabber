@@ -174,9 +174,22 @@ func (f *M3u8File) getSegments(httpProxy, socksProxy string) error {
 
 	// crypto
 	if f.ExtXKey != "" {
+
+		idx := strings.IndexByte(f.ExtXKey, ':')
+		subLines := strings.Split(f.ExtXKey[idx+1:], ",")
+		for _, sl := range subLines {
+			// Logger.Println(sl)
+			slC := strings.Split(sl, "=")
+			if slC[0] == "METHOD" {
+				if len(slC) > 1 && slC[1] == "SAMPLE-AES" {
+					Logger.Print("SAMPLE-AES encryption not yet supported")
+					return fmt.Errorf("Stream is SAMPLE-AES encrypted, this is not yet supported")
+				}
+			}
+		}
 		// See https://developer.apple.com/library/content/technotes/tn2288/_index.html#//apple_ref/doc/uid/DTS40012238-CH1-ENCRYPT
 		// See https://www.theoplayer.com/blog/content-protection-for-hls-with-aes-128-encryption
-		idx := strings.Index(f.ExtXKey, "URI=")
+		idx = strings.Index(f.ExtXKey, "URI=")
 		start := idx + 5
 		if idx > 0 && len(f.ExtXKey) > start {
 			idx = strings.IndexByte(f.ExtXKey[start:], '"')
