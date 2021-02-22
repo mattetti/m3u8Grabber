@@ -111,7 +111,7 @@ func (w *Worker) dispatch(job *WJob) {
 func (w *Worker) downloadM3u8List(j *WJob) {
 	m3f := &M3u8File{Url: j.URL}
 	if err := m3f.Process(); err != nil {
-		j.Err = errors.New("Failed to process the m3u8 file")
+		j.Err = fmt.Errorf("Failed to process the m3u8 file - %v", err)
 		Logger.Printf("ERROR: %s", j.Err)
 		return
 	}

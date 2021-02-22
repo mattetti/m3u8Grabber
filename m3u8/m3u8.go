@@ -101,7 +101,7 @@ func (f *M3u8File) getSegments(httpProxy, socksProxy string) error {
 	m3u8Lines := strings.Split(strings.TrimSpace(m3u8content), "\n")
 
 	if !strings.HasPrefix(m3u8Lines[0], "#EXTM3U") {
-		return errors.New(f.Url + " is not a valid m3u8 file")
+		return errors.New(f.Url + " is not a valid m3u8 file (missing #EXTM3U header)")
 	}
 	var l string
 	for i := 0; i < len(m3u8Lines); i++ {
@@ -118,7 +118,7 @@ func (f *M3u8File) getSegments(httpProxy, socksProxy string) error {
 			}
 			rendition := ExtractRendition(l)
 			i++
-			rendition.URL = m3u8Lines[i]
+			rendition.URL = strings.TrimRight(strings.TrimRight(m3u8Lines[i], "\r\n"), "\r")
 			f.Renditions = append(f.Renditions, rendition)
 		}
 		if strings.HasPrefix(l, audioStreamMarker) {
@@ -185,23 +185,27 @@ func (f *M3u8File) getSegments(httpProxy, socksProxy string) error {
 				Logger.Println("Encryption key available from:", uri)
 			}
 			if len(uri) > 0 {
-				resp, err := downloadUrl(&http.Client{}, uri, 3, "", "")
-				if err != nil {
-					Logger.Printf("Failed to download the encryption key - %v\n", err)
-					return err
-				}
-				if resp.StatusCode < 200 || resp.StatusCode > 299 {
-					Logger.Printf("Failed to properly download the encryption key from %s - Status code: %d\n", uri, resp.StatusCode)
-					return fmt.Errorf("Encryption key response code: %d", resp.StatusCode)
-				}
-				f.GlobalKey, err = ioutil.ReadAll(resp.Body)
-				resp.Body.Close()
-				if err != nil {
-					Logger.Printf("Failed to read the encryption key from source - %v\n", err)
-					return err
-				}
-				if Debug {
-					Logger.Printf("Encryption key: %v\n", f.GlobalKey)
+				if strings.Index(uri, "skd://") == 0 {
+					f.GlobalKey = []byte("1a0770070728b80aeeb0902129f52878")
+				} else {
+					resp, err := downloadUrl(&http.Client{}, uri, 3, "", "")
+					if err != nil {
+						Logger.Printf("Failed to download the encryption key - %v\n", err)
+						return err
+					}
+					if resp.StatusCode < 200 || resp.StatusCode > 299 {
+						Logger.Printf("Failed to properly download the encryption key from %s - Status code: %d\n", uri, resp.StatusCode)
+						return fmt.Errorf("Encryption key response code: %d", resp.StatusCode)
+					}
+					f.GlobalKey, err = ioutil.ReadAll(resp.Body)
+					resp.Body.Close()
+					if err != nil {
+						Logger.Printf("Failed to read the encryption key from source - %v\n", err)
+						return err
+					}
+					if Debug {
+						Logger.Printf("Encryption key: %v\n", f.GlobalKey)
+					}
 				}
 			}
 		}
