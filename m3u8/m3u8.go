@@ -18,6 +18,16 @@ var Logger = log.New(os.Stdout, "", log.Ldate|log.Ltime|log.Lshortfile)
 
 var kvSplitByEqRegex = regexp.MustCompile(`([a-zA-Z0-9_-]+)=("[^"]+"|[^",]+)`)
 
+// CustomM3u8Processor is an interface that allows for the caller to customize
+// the processing of the file. For instance to handle DRM content.
+type CustomM3u8Processor interface {
+	// ProcessKey gets called after the ExtXKey value is extracted
+	ProcessKey(f *M3u8File, key string, _logger *log.Logger) error
+}
+
+// CustomProcessor allows the caller to set their own processor.
+var CustomProcessor CustomM3u8Processor
+
 type M3u8File struct {
 	Url string
 	// urls of the all the segments
@@ -31,6 +41,11 @@ type M3u8File struct {
 	IV []byte
 	// Renditions in case the file has different versions
 	Renditions []Rendition
+
+	// Apple HLS supports two encryption methods:
+	// 		AES-128 It encrypts the whole segment with the Advanced Encryption Standard (AES) using a 128 bit key, Cipher Block Chaining (CBC) and PKCS7 padding.The CBC will be restarted with each segment using the Initialization Vector (IV) provided.
+	// 		SAMPLE-AES It encrypts each individual media sample (e.g., video, audio, etc.) by its own with AES. The specific encryption and packaging depends on the media format, e.g., H.264, AAC, etc. SAMPLE-AES allows fine grained encryption modes, e.g., just encrypt I frames, just encrypt 1 out of 10 samples, etc. This could decrease the complexity of the decryption process. Several advantages result out of this approach as fewer CPU cycles are needed and for example mobile devices need less power consumption, higher resolutions can be effectively decrypted, etc.
+	CryptoMethod string
 
 	// ClosedCaptions - The value can be either a quoted-string or an
 	// enumerated-string with the value NONE.  If the value is a quoted-string,
@@ -174,50 +189,67 @@ func (f *M3u8File) getSegments(httpProxy, socksProxy string) error {
 
 	// crypto
 	if f.ExtXKey != "" {
-
 		idx := strings.IndexByte(f.ExtXKey, ':')
 		subLines := strings.Split(f.ExtXKey[idx+1:], ",")
 		for _, sl := range subLines {
-			// Logger.Println(sl)
 			slC := strings.Split(sl, "=")
-			if slC[0] == "METHOD" {
-				if len(slC) > 1 && slC[1] == "SAMPLE-AES" {
-					Logger.Print("SAMPLE-AES encryption not yet supported")
-					return fmt.Errorf("Stream is SAMPLE-AES encrypted, this is not yet supported")
-				}
+			if len(slC) < 2 {
+				continue
+			}
+			switch slC[0] {
+			case "METHOD":
+				f.CryptoMethod = slC[1]
+			default:
+				// Logger.Println(slC)
 			}
 		}
-		// See https://developer.apple.com/library/content/technotes/tn2288/_index.html#//apple_ref/doc/uid/DTS40012238-CH1-ENCRYPT
-		// See https://www.theoplayer.com/blog/content-protection-for-hls-with-aes-128-encryption
-		idx = strings.Index(f.ExtXKey, "URI=")
-		start := idx + 5
-		if idx > 0 && len(f.ExtXKey) > start {
-			idx = strings.IndexByte(f.ExtXKey[start:], '"')
-			uri := f.ExtXKey[start : start+idx]
-			if Debug {
-				Logger.Println("Encryption key available from:", uri)
+
+		if CustomProcessor != nil {
+			if err := CustomProcessor.ProcessKey(f, f.ExtXKey, Logger); err != nil {
+				return err
 			}
-			if len(uri) > 0 {
-				if strings.Index(uri, "skd://") == 0 {
-					f.GlobalKey = []byte("1a0770070728b80aeeb0902129f52878")
-				} else {
-					resp, err := downloadUrl(&http.Client{}, uri, 3, "", "")
-					if err != nil {
-						Logger.Printf("Failed to download the encryption key - %v\n", err)
-						return err
-					}
-					if resp.StatusCode < 200 || resp.StatusCode > 299 {
-						Logger.Printf("Failed to properly download the encryption key from %s - Status code: %d\n", uri, resp.StatusCode)
-						return fmt.Errorf("Encryption key response code: %d", resp.StatusCode)
-					}
-					f.GlobalKey, err = ioutil.ReadAll(resp.Body)
-					resp.Body.Close()
-					if err != nil {
-						Logger.Printf("Failed to read the encryption key from source - %v\n", err)
-						return err
-					}
+		} else {
+
+			if f.CryptoMethod == "SAMPLE-AES" {
+				Logger.Print("SAMPLE-AES encryption not yet supported")
+				return fmt.Errorf("Stream is SAMPLE-AES encrypted, this is not yet supported")
+			}
+
+			if f.CryptoMethod != "SAMPLE-AES" {
+				// aes-128
+				// See https://developer.apple.com/library/content/technotes/tn2288/_index.html#//apple_ref/doc/uid/DTS40012238-CH1-ENCRYPT
+				// See https://www.theoplayer.com/blog/content-protection-for-hls-with-aes-128-encryption
+				idx = strings.Index(f.ExtXKey, "URI=")
+				start := idx + 5
+				if idx > 0 && len(f.ExtXKey) > start {
+					idx = strings.IndexByte(f.ExtXKey[start:], '"')
+					uri := f.ExtXKey[start : start+idx]
 					if Debug {
-						Logger.Printf("Encryption key: %v\n", f.GlobalKey)
+						Logger.Println("Encryption key available from:", uri)
+					}
+					if len(uri) > 0 {
+						if strings.Index(uri, "skd://") == 0 {
+							f.GlobalKey = []byte("1a0770070728b80aeeb0902129f52878")
+						} else {
+							resp, err := downloadUrl(&http.Client{}, uri, 3, "", "")
+							if err != nil {
+								Logger.Printf("Failed to download the encryption key - %v\n", err)
+								return err
+							}
+							if resp.StatusCode < 200 || resp.StatusCode > 299 {
+								Logger.Printf("Failed to properly download the encryption key from %s - Status code: %d\n", uri, resp.StatusCode)
+								return fmt.Errorf("Encryption key response code: %d", resp.StatusCode)
+							}
+							f.GlobalKey, err = ioutil.ReadAll(resp.Body)
+							resp.Body.Close()
+							if err != nil {
+								Logger.Printf("Failed to read the encryption key from source - %v\n", err)
+								return err
+							}
+							if Debug {
+								Logger.Printf("Encryption key: %v\n", f.GlobalKey)
+							}
+						}
 					}
 				}
 			}
