@@ -198,7 +198,7 @@ func (f *M3u8File) getSegments(httpProxy, socksProxy string) error {
 			}
 			switch slC[0] {
 			case "METHOD":
-				f.CryptoMethod = slC[1]
+				f.CryptoMethod = strings.ToLower(slC[1])
 			default:
 				// Logger.Println(slC)
 			}

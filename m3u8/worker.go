@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -59,7 +60,8 @@ type WJob struct {
 	Filename      string
 	Pos           int
 	// Err gets populated if something goes wrong while processing the job
-	Err error
+	Err    error
+	Crypto string
 	// Key is the AES segment key if available
 	Key []byte
 	IV  []byte
@@ -127,7 +129,8 @@ func (w *Worker) downloadM3u8List(j *WJob) {
 			SkipConverter: true,
 			DestPath:      j.DestPath,
 			AbsolutePath:  j.DestPath + "/" + j.Filename + filepath.Ext(m3f.Segments[0]),
-			Filename:      j.Filename}
+			Filename:      j.Filename,
+		}
 		segChan <- ccjob
 	}
 	var defaultAudiostreamPath string
@@ -147,6 +150,7 @@ func (w *Worker) downloadM3u8List(j *WJob) {
 			DestPath:      j.DestPath,
 			AbsolutePath:  defaultAudiostreamPath,
 			Filename:      audiostreamFilename,
+			Crypto:        m3f.CryptoMethod,
 			Key:           m3f.GlobalKey,
 			IV:            m3f.IV,
 			wg:            &sync.WaitGroup{},
@@ -168,6 +172,7 @@ func (w *Worker) downloadM3u8List(j *WJob) {
 			wg:       j.wg,
 			DestPath: j.DestPath,
 			Filename: j.Filename,
+			Crypto:   m3f.CryptoMethod,
 			Key:      m3f.GlobalKey,
 			IV:       m3f.IV,
 		}
@@ -279,7 +284,7 @@ func (w *Worker) downloadM3u8Audio(j *WJob) {
 	if Debug {
 		Logger.Printf("Downloading audio stream from %s\n", j.URL)
 	}
-	m3f := &M3u8File{Url: j.URL}
+	m3f := &M3u8File{Url: j.URL, GlobalKey: j.Key}
 	if err := m3f.Process(); err != nil {
 		Logger.Printf("Failed to download audio stream: %v\n", err)
 	}
@@ -290,6 +295,10 @@ func (w *Worker) downloadM3u8Audio(j *WJob) {
 	wg := &sync.WaitGroup{}
 	for i, segURL := range m3f.Segments {
 		wg.Add(1)
+		key := m3f.GlobalKey
+		if key == nil && j.Key != nil {
+			key = j.Key
+		}
 		segChan <- &WJob{
 			Type:     AudioSegmentDL,
 			URL:      segURL,
@@ -297,7 +306,8 @@ func (w *Worker) downloadM3u8Audio(j *WJob) {
 			wg:       wg,
 			DestPath: j.DestPath,
 			Filename: j.Filename,
-			Key:      j.Key,
+			Crypto:   m3f.CryptoMethod,
+			Key:      key,
 			IV:       j.IV,
 		}
 	}
@@ -475,11 +485,14 @@ func (w *Worker) downloadM3u8Segment(j *WJob) {
 			Logger.Printf("[%d] - Decrypting %s\n", w.id, destination)
 		}
 		// Decrypt in order if we have a global key
-		if err := decryptFile(destination, j.Pos, j.Key, j.IV); err != nil {
+		if err := decryptFile(destination, j.Pos, j); err != nil {
 			j.Err = fmt.Errorf("failed to decrypt segment %d - %v", j.Pos, err)
 			Logger.Println(j.Err)
 			return
 		}
+		fmt.Println(destination)
+		log.Fatal("stopping here for now")
+
 	}
 
 	if j.Type == AudioSegmentDL {
@@ -497,8 +510,11 @@ func (w *Worker) downloadM3u8Segment(j *WJob) {
 	}
 }
 
-func decryptFile(segmentFile string, i int, globalKey, iv []byte) error {
+func decryptFile(segmentFile string, i int, j *WJob) error {
+	iv := j.IV
 	if len(iv) == 0 {
+		// TODO: check if true for sample-aes
+		//
 		// An EXT-X-KEY tag that does not have an IV attribute indicates
 		// that the Media Sequence Number is to be used as the IV when
 		// decrypting a Media Segment, by putting its big-endian binary
@@ -525,7 +541,12 @@ func decryptFile(segmentFile string, i int, globalKey, iv []byte) error {
 		Logger.Printf("Decrypting segment %d\n", i)
 	}
 
-	err = aesDecrypt(in, tOut, globalKey, iv)
+	if j.Crypto == "sample-aes" {
+		// TODO: sample-aes cbcs (AES-128 CBC) but might be cenc (AES-128 CTR)
+		err = sampleAESdecrypt(in, tOut, j)
+	} else {
+		err = aesDecrypt(in, tOut, j)
+	}
 	if Debug {
 		Logger.Printf("Segment %d decrypted, error: %v\n", i, err)
 	}
