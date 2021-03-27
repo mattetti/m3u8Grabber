@@ -83,7 +83,7 @@ func sampleAESdecrypt(src *os.File, dst io.Writer, j *WJob) error {
 
 	ctx, _ := context.WithCancel(context.Background())
 	// demuxer
-	dmx := astits.New(ctx, src)
+	dmx := astits.NewDemuxer(ctx, src)
 	packets := []*astits.PESData{}
 	for {
 		d, err := dmx.NextData()
@@ -105,8 +105,8 @@ func sampleAESdecrypt(src *os.File, dst io.Writer, j *WJob) error {
 		if d.PMT != nil {
 			// Loop through elementary streams
 			for _, es := range d.PMT.ElementaryStreams {
-				fmt.Printf("Stream detected, type: %s\n", pmtStreamType[es.StreamType])
-				if pmtStreamType[es.StreamType] == "AAC-Audio" {
+				fmt.Printf("Stream detected, type: %s\n", pmtStreamType[uint8(es.StreamType)])
+				if pmtStreamType[uint8(es.StreamType)] == "AAC-Audio" {
 					// https://wiki.multimedia.cx/index.php/ADTS
 					fmt.Println("ADTS stream stream")
 				}
@@ -116,7 +116,7 @@ func sampleAESdecrypt(src *os.File, dst io.Writer, j *WJob) error {
 
 	_, err := src.Seek(0, 0)
 	if err != nil {
-		log.Fatal("failed to rewrind the source")
+		log.Fatal("failed to rewind the source")
 	}
 	n, err := io.Copy(dst, src)
 	fmt.Println(n, err)

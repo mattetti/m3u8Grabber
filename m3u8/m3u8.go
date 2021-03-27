@@ -118,6 +118,8 @@ func (f *M3u8File) getSegments(httpProxy, socksProxy string) error {
 	if !strings.HasPrefix(m3u8Lines[0], "#EXTM3U") {
 		return errors.New(f.Url + " is not a valid m3u8 file (missing #EXTM3U header)")
 	}
+
+	var segmentUrls []string
 	var l string
 	for i := 0; i < len(m3u8Lines); i++ {
 		l = m3u8Lines[i]
@@ -185,6 +187,16 @@ func (f *M3u8File) getSegments(httpProxy, socksProxy string) error {
 				Logger.Printf("Found subtitles at %s\n", uri)
 			}
 		}
+
+		// #EXT-X-MAP:URI="something_v720.mp4",BYTERANGE="19779@0"
+		if strings.HasPrefix(l, "#EXT-X-MAP:") {
+			mapParams := decodeEqParamLine(l[11:])
+			uri := makeURLAbsolute(mapParams["URI"], f.Url)
+			segmentUrls = append(segmentUrls, uri)
+		}
+
+		// #EXT-X-BYTERANGE:1638290@2995376
+
 	}
 
 	// crypto
@@ -288,14 +300,15 @@ func (f *M3u8File) getSegments(httpProxy, socksProxy string) error {
 		return nil
 	}
 
-	var segmentUrls []string
-	for _, line := range m3u8Lines {
-		// trim each line
-		line = strings.TrimSpace(line)
-		if line != "" && !strings.HasPrefix(line, "#") {
-			// deal with relative paths
-			line = makeURLAbsolute(line, f.Url)
-			segmentUrls = append(segmentUrls, line)
+	if len(segmentUrls) == 0 {
+		for _, line := range m3u8Lines {
+			// trim each line
+			line = strings.TrimSpace(line)
+			if line != "" && !strings.HasPrefix(line, "#") {
+				// deal with relative paths
+				line = makeURLAbsolute(line, f.Url)
+				segmentUrls = append(segmentUrls, line)
+			}
 		}
 	}
 	f.Segments = segmentUrls
