@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
-	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -491,8 +490,6 @@ func (w *Worker) downloadM3u8Segment(j *WJob) {
 			return
 		}
 		fmt.Println(destination)
-		log.Fatal("stopping here for now")
-
 	}
 
 	if j.Type == AudioSegmentDL {

@@ -100,13 +100,15 @@ func sampleAESdecrypt(src *os.File, dst io.Writer, j *WJob) error {
 			fmt.Printf("PES packet length: %d\n", d.PES.Header.PacketLength)
 			// fmt.Printf("Partial payload\n: %+X", d.PES.Data[:16])
 			packets = append(packets, d.PES)
+			fmt.Printf("PED data size: %d\n", len(d.PES.Data))
+			fmt.Printf("Key %s\n", string(j.Key))
 		}
 
 		if d.PMT != nil {
 			// Loop through elementary streams
 			for _, es := range d.PMT.ElementaryStreams {
-				fmt.Printf("Stream detected, type: %s\n", pmtStreamType[uint8(es.StreamType)])
-				if pmtStreamType[uint8(es.StreamType)] == "AAC-Audio" {
+				fmt.Printf("Stream detected, type: %s\n", es.StreamType.String())
+				if es.StreamType.String() == "AAC-Audio" {
 					// https://wiki.multimedia.cx/index.php/ADTS
 					fmt.Println("ADTS stream stream")
 				}
