@@ -283,9 +283,16 @@ func (f *M3u8File) getSegments(httpProxy, socksProxy string) error {
 			f.Renditions[0].ClosedCaptions[n] = makeURLAbsolute(cc, f.Url)
 		}
 		Logger.Printf("Chosen rendition: %+v\n", f.Renditions[0])
-		nf := &M3u8File{Url: f.Renditions[0].URL,
-			ClosedCaptions: f.Renditions[0].ClosedCaptions}
-
+		// if f.Rendering[0] is not a valid URL, we need to append it to the base of f.Url
+		if !strings.HasPrefix(f.Renditions[0].URL, "http") {
+			// print the URL path of f.Url without the filename
+			idx := strings.LastIndex(f.Url, "/")
+			if idx > 0 {
+				f.Renditions[0].URL = f.Url[:idx+1] + f.Renditions[0].URL
+			}
+			fmt.Println("Updated URL to", f.Renditions[0].URL)
+		}
+		nf := &M3u8File{Url: f.Renditions[0].URL, ClosedCaptions: f.Renditions[0].ClosedCaptions}
 		if err := nf.getSegments(httpProxy, socksProxy); err != nil {
 			return err
 		}
