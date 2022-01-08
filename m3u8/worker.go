@@ -127,7 +127,6 @@ func (w *Worker) downloadM3u8List(j *WJob) {
 			URL:           cc,
 			SkipConverter: true,
 			DestPath:      j.DestPath,
-			AbsolutePath:  j.DestPath + "/" + j.Filename + filepath.Ext(m3f.Segments[0]),
 			Filename:      j.Filename,
 		}
 		segChan <- ccjob
@@ -391,6 +390,7 @@ func (w *Worker) downloadM3u8CC(j *WJob) {
 	if subFile == "" {
 		subFile = j.DestPath + "/" + j.Filename + filepath.Ext(m3f.Segments[0])
 	}
+	Logger.Printf("Downloaded sub file abs path: %s\n", subFile)
 	if _, err := os.Stat(j.DestPath); err != nil {
 		if os.IsNotExist(err) {
 			if err := os.MkdirAll(j.DestPath, os.ModePerm); err != nil {
@@ -420,9 +420,9 @@ func (w *Worker) downloadM3u8CC(j *WJob) {
 	}
 	Logger.Printf("Sub file available at %s\n", subFile)
 	// convert to srt
-	if err := SubToSrt(subFile); err != nil {
-		Logger.Printf("Failed to convert the subtitles - %v\n", err)
-	}
+	// if err := SubToSrt(subFile); err != nil {
+	// 	Logger.Printf("Failed to convert the subtitles - %v\n", err)
+	// }
 }
 
 // downloadM3u8Segment downloads one segment of a m3u8 file

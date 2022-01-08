@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"os"
 	"regexp"
-	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -225,7 +224,7 @@ func (f *M3u8File) getSegments(httpProxy, socksProxy string) error {
 
 			if f.CryptoMethod == "SAMPLE-AES" {
 				Logger.Print("SAMPLE-AES encryption not yet supported")
-				return fmt.Errorf("Stream is SAMPLE-AES encrypted, this is not yet supported")
+				return fmt.Errorf("stream is SAMPLE-AES encrypted, this is not yet supported")
 			}
 
 			if f.CryptoMethod != "SAMPLE-AES" {
@@ -251,7 +250,7 @@ func (f *M3u8File) getSegments(httpProxy, socksProxy string) error {
 							}
 							if resp.StatusCode < 200 || resp.StatusCode > 299 {
 								Logger.Printf("Failed to properly download the encryption key from %s - Status code: %d\n", uri, resp.StatusCode)
-								return fmt.Errorf("Encryption key response code: %d", resp.StatusCode)
+								return fmt.Errorf("encryption key response code: %d", resp.StatusCode)
 							}
 							f.GlobalKey, err = ioutil.ReadAll(resp.Body)
 							resp.Body.Close()
@@ -284,15 +283,7 @@ func (f *M3u8File) getSegments(httpProxy, socksProxy string) error {
 			f.Renditions[0].ClosedCaptions[n] = makeURLAbsolute(cc, f.Url)
 		}
 		Logger.Printf("Chosen rendition: %+v\n", f.Renditions[0])
-		// if f.Rendering[0] is not a valid URL, we need to append it to the base of f.Url
-		if !strings.HasPrefix(f.Renditions[0].URL, "http") {
-			// print the URL path of f.Url without the filename
-			idx := strings.LastIndex(f.Url, "/")
-			if idx > 0 {
-				f.Renditions[0].URL = f.Url[:idx+1] + f.Renditions[0].URL
-			}
-			fmt.Println("Updated URL to", f.Renditions[0].URL)
-		}
+		f.Renditions[0].URL = makeURLAbsolute(f.Renditions[0].URL, f.Url)
 		nf := &M3u8File{Url: f.Renditions[0].URL, ClosedCaptions: f.Renditions[0].ClosedCaptions}
 		if err := nf.getSegments(httpProxy, socksProxy); err != nil {
 			return err
@@ -302,9 +293,7 @@ func (f *M3u8File) getSegments(httpProxy, socksProxy string) error {
 		f.Segments = nf.Segments
 		f.GlobalKey = nf.GlobalKey
 		f.IV = nf.IV
-		for _, cc := range nf.ClosedCaptions {
-			f.ClosedCaptions = append(f.ClosedCaptions, cc)
-		}
+		f.ClosedCaptions = append(f.ClosedCaptions, nf.ClosedCaptions...)
 		return nil
 	}
 
