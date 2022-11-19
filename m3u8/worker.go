@@ -55,6 +55,7 @@ func LaunchWorkers(wg *sync.WaitGroup, stop <-chan bool) {
 type WJob struct {
 	Type          WJobType
 	SkipConverter bool
+	SubsOnly      bool
 	URL           string
 	AbsolutePath  string
 	DestPath      string
@@ -120,19 +121,28 @@ func (w *Worker) downloadM3u8List(j *WJob) {
 	}
 	j.Filename = CleanFilename(j.Filename)
 	j.DestPath = CleanPath(j.DestPath)
+
 	// Queue up the subs first
-	for _, cc := range m3f.ClosedCaptions {
-		// queue up the subtitles
-		// FIXME: properly support multiple subtitles for a given source
-		ccjob := &WJob{
-			Type:          CCDL,
-			URL:           cc,
-			SkipConverter: true,
-			DestPath:      j.DestPath,
-			Filename:      j.Filename,
+	if len(m3f.ClosedCaptions) > 0 {
+		ccWG := &sync.WaitGroup{}
+		for _, cc := range m3f.ClosedCaptions {
+			// queue up the subtitles
+			// FIXME: properly support multiple subtitles for a given source
+			ccjob := &WJob{
+				Type:          CCDL,
+				URL:           cc,
+				SkipConverter: true,
+				DestPath:      j.DestPath,
+				Filename:      j.Filename,
+			}
+			// kinda useless since there is usually only 1 cc file but still good to have
+			ccWG.Add(1)
+			ccjob.wg = ccWG
+			segChan <- ccjob
 		}
-		segChan <- ccjob
+		ccWG.Wait()
 	}
+
 	var defaultAudiostreamPath string
 	// check if there is a default audio stream to download
 	if hasStream, s := m3f.HasDefaultExtAudioStream(); hasStream {
@@ -155,38 +165,49 @@ func (w *Worker) downloadM3u8List(j *WJob) {
 			IV:            m3f.IV,
 			wg:            &sync.WaitGroup{},
 		}
-		audioJob.wg.Add(1)
 
-		segChan <- audioJob
-		audioJob.wg.Wait()
+		if !j.SubsOnly {
+			audioJob.wg.Add(1)
+
+			segChan <- audioJob
+			audioJob.wg.Wait()
+		}
 	}
 	// TODO: check if we should be getting other variant audio streams
 
-	j.wg = &sync.WaitGroup{}
-	for i, segURL := range m3f.Segments {
-		j.wg.Add(1)
-		segChan <- &WJob{
-			Type:     FileDL,
-			URL:      segURL,
-			Pos:      i,
-			wg:       j.wg,
-			DestPath: j.DestPath,
-			Filename: j.Filename,
-			Crypto:   m3f.CryptoMethod,
-			Key:      m3f.GlobalKey,
-			IV:       m3f.IV,
+	if !j.SubsOnly {
+		j.wg = &sync.WaitGroup{}
+		for i, segURL := range m3f.Segments {
+			j.wg.Add(1)
+			segChan <- &WJob{
+				Type:     FileDL,
+				URL:      segURL,
+				Pos:      i,
+				wg:       j.wg,
+				DestPath: j.DestPath,
+				Filename: j.Filename,
+				Crypto:   m3f.CryptoMethod,
+				Key:      m3f.GlobalKey,
+				IV:       m3f.IV,
+			}
 		}
-	}
-	Logger.Printf("[%d] waiting for the segments to be downloaded", w.id)
-	j.wg.Wait()
-	if len(m3f.Segments) == 0 {
-		j.Err = errors.New("invalid m3u8 file, no segments to download found")
-		Logger.Printf("ERROR: %s", j.Err)
-		return
+
+		Logger.Printf("[%d] waiting for the segments to be downloaded", w.id)
+		j.wg.Wait()
+		if len(m3f.Segments) == 0 {
+			j.Err = errors.New("invalid m3u8 file, no segments to download found")
+			Logger.Printf("ERROR: %s", j.Err)
+			return
+		}
 	}
 
 	// put the segments together
 	Logger.Printf("All segments (%d) downloaded!\n", len(m3f.Segments))
+
+	if j.SubsOnly {
+		Logger.Printf("Only subs - executed!\n")
+		return
+	}
 	Logger.Printf("Rebuilding the file now, this step might take a little while.")
 
 	// create the temp video file
@@ -380,6 +401,12 @@ func (w *Worker) downloadM3u8CC(j *WJob) {
 	if Debug {
 		Logger.Printf("Downloading subtitles from %s\n", j.URL)
 	}
+	defer func() {
+		if j.wg != nil {
+			Logger.Printf("Reducing the wg")
+			j.wg.Done()
+		}
+	}()
 	m3f := &M3u8File{Url: j.URL}
 	if err := m3f.getSegments("", ""); err != nil {
 		Logger.Printf("Failed to download CC: %v\n", err)
@@ -390,9 +417,9 @@ func (w *Worker) downloadM3u8CC(j *WJob) {
 	}
 	subFile := j.AbsolutePath
 	if subFile == "" {
-		subFile = j.DestPath + "/" + j.Filename + ".vtt" // + filepath.Ext(m3f.Segments[0])
+		subFile = j.DestPath + "/" + j.Filename + ".srt" // + filepath.Ext(m3f.Segments[0])
 	}
-	Logger.Printf("Downloaded sub file abs path: %s\n", subFile)
+	Logger.Printf("Downloading sub file abs path: %s\n", subFile)
 	if _, err := os.Stat(j.DestPath); err != nil {
 		if os.IsNotExist(err) {
 			if err := os.MkdirAll(j.DestPath, os.ModePerm); err != nil {
@@ -411,7 +438,12 @@ func (w *Worker) downloadM3u8CC(j *WJob) {
 	defer out.Close()
 	subs := &astisub.Subtitles{}
 	var segSubs *astisub.Subtitles
-	for _, segURL := range m3f.Segments {
+
+	// downloading on the same working, which is a bit slow
+	for i, segURL := range m3f.Segments {
+		if (i+1)%10 == 0 {
+			Logger.Printf("Downloading sub segment %d/%d", i+1, len(m3f.Segments))
+		}
 		res, err := http.Get(segURL)
 		if err != nil {
 			Logger.Printf("Failed to get subtitle part %s, %v\n", segURL, err)
@@ -436,7 +468,7 @@ func (w *Worker) downloadM3u8CC(j *WJob) {
 	if len(subs.Items) > 0 {
 		subs.Add(-subs.Items[0].StartAt)
 	}
-	if err = subs.WriteToWebVTT(out); err != nil {
+	if err = subs.WriteToSRT(out); err != nil {
 		Logger.Printf("Failed to write the subtitle file, %v\n", err)
 	}
 
