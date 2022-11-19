@@ -11,6 +11,8 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+
+	"github.com/asticode/go-astisub"
 )
 
 var (
@@ -112,7 +114,7 @@ func (w *Worker) dispatch(job *WJob) {
 func (w *Worker) downloadM3u8List(j *WJob) {
 	m3f := &M3u8File{Url: j.URL}
 	if err := m3f.Process(); err != nil {
-		j.Err = fmt.Errorf("Failed to process the m3u8 file - %v", err)
+		j.Err = fmt.Errorf("failed to process the m3u8 file - %w", err)
 		Logger.Printf("ERROR: %s", j.Err)
 		return
 	}
@@ -388,7 +390,7 @@ func (w *Worker) downloadM3u8CC(j *WJob) {
 	}
 	subFile := j.AbsolutePath
 	if subFile == "" {
-		subFile = j.DestPath + "/" + j.Filename + filepath.Ext(m3f.Segments[0])
+		subFile = j.DestPath + "/" + j.Filename + ".vtt" // + filepath.Ext(m3f.Segments[0])
 	}
 	Logger.Printf("Downloaded sub file abs path: %s\n", subFile)
 	if _, err := os.Stat(j.DestPath); err != nil {
@@ -406,23 +408,39 @@ func (w *Worker) downloadM3u8CC(j *WJob) {
 		Logger.Printf("Failed to create the sub file: %s - %s", subFile, err)
 		return
 	}
+	defer out.Close()
+	subs := &astisub.Subtitles{}
+	var segSubs *astisub.Subtitles
 	for _, segURL := range m3f.Segments {
 		res, err := http.Get(segURL)
 		if err != nil {
 			Logger.Printf("Failed to get subtitle part %s, %v\n", segURL, err)
 			return
 		}
-		_, err = io.Copy(out, res.Body)
+
+		// TODO: check the format, don't assume VTT
+		segSubs, err = astisub.ReadFromWebVTT(res.Body)
 		if err != nil {
-			Logger.Printf("Failed to append to the subtitle file, %v\n", err)
+			Logger.Printf("Failed to get subtitle part %s, %v\n", segURL, err)
+			res.Body.Close()
+			continue
+			// _, err = io.Copy(out, res.Body)
+			// if err != nil {
+			// 	Logger.Printf("Failed to append to the subtitle file, %v\n", err)
+			// }
 		}
+		subs.Merge(segSubs)
 		res.Body.Close()
 	}
+	// realign the subtitles
+	if len(subs.Items) > 0 {
+		subs.Add(-subs.Items[0].StartAt)
+	}
+	if err = subs.WriteToWebVTT(out); err != nil {
+		Logger.Printf("Failed to write the subtitle file, %v\n", err)
+	}
+
 	Logger.Printf("Sub file available at %s\n", subFile)
-	// convert to srt
-	// if err := SubToSrt(subFile); err != nil {
-	// 	Logger.Printf("Failed to convert the subtitles - %v\n", err)
-	// }
 }
 
 // downloadM3u8Segment downloads one segment of a m3u8 file
