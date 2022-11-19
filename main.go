@@ -18,6 +18,7 @@ var (
 	httpProxy      = flag.String("http_proxy", "", "The url of the HTTP proxy to use.")
 	socksProxy     = flag.String("socks_proxy", "", "<host>:<port> of the socks5 proxy to use.")
 	debug          = flag.Bool("debug", false, "Enable debugging messages.")
+	subsOnly       = flag.Bool("subsOnly", false, "Only download the subtitles.")
 	serverPort     = flag.Int("server_port", 13535, "The port to run the http server on.")
 	serverMode     = flag.Bool("server", false, "Enable running a local web server (not working yet).")
 	dlRootDir      = flag.String("root_dir", "/tmp", "The root dir to download files to")
@@ -64,6 +65,7 @@ func main() {
 		job := &m3u8.WJob{
 			Type:          m3u8.ListDL,
 			URL:           *m3u8Url,
+			SubsOnly:      *subsOnly,
 			SkipConverter: !*mp4Conv,
 			DestPath:      pathToUse,
 			Filename:      *outputFileName}
