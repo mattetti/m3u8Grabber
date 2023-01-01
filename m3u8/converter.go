@@ -112,13 +112,13 @@ func AdtsToAac(path string) error {
 }
 
 // TsToMp4 converts a mp4/aac TS file into a MKV file using ffmeg.
-func TsToMp4(inTsPath []string, outMp4Path string) error {
+func TsToMp4(inTsPath []string, outMp4Path string, subFile string) error {
 	Logger.Println("converting to mp4")
-	return TsToMkv(inTsPath, outMp4Path)
+	return TsToMkv(inTsPath, outMp4Path, subFile)
 }
 
 // TsToMkv converts a mp4/aac TS file into a MKV file using ffmeg.
-func TsToMkv(inTsPaths []string, outMkvPath string) (err error) {
+func TsToMkv(inTsPaths []string, outMkvPath string, subFile string) (err error) {
 	ffmpegPath, err := FfmpegPath()
 	if err != nil {
 		Logger.Fatalf("ffmpeg wasn't found on your system, it is required to convert video files.\n"+
@@ -126,28 +126,32 @@ func TsToMkv(inTsPaths []string, outMkvPath string) (err error) {
 		os.Exit(1)
 	}
 
-	// ffmpeg flags
 	// -y overwrites without asking
-	//cmd = exec.Command(ffmpegPath, "-y", "-i", inTsPath, "-vcodec", "copy", "-acodec", "copy", outMkvPath)
-	var args []string
-	if len(inTsPaths) == 1 {
-		args = []string{"-y",
-			"-i", inTsPaths[0],
-			"-vcodec", "copy",
-			"-acodec", "copy",
-			"-bsf:a", "aac_adtstoasc",
-			outMkvPath}
-	} else {
-		args = []string{"-y"}
-		for _, path := range inTsPaths {
-			args = append(args, "-i")
-			args = append(args, path)
-		}
-		args = append(args, []string{
-			"-vcodec", "copy",
-			"-acodec", "copy",
-			"-bsf:a", "aac_adtstoasc", outMkvPath}...)
+	args := []string{"-y"}
+
+	// add all the inTSPaths to the args
+	for _, path := range inTsPaths {
+		args = append(args, "-i", path)
 	}
+
+	if subFile != "" {
+		// check if the file does exist
+		if fileAlreadyExists(subFile) {
+			// if it exists, add the subtitle to the ffmpeg command
+			args = append(args,
+				"-i", subFile,
+				"-c:s", "mov_text")
+		}
+	}
+
+	// add the rest of the args
+	args = append(args,
+		"-vcodec", "copy",
+		"-acodec", "copy",
+		"-bsf:a", "aac_adtstoasc")
+
+	args = append(args, outMkvPath)
+
 	cmd := exec.Command(ffmpegPath, args...)
 
 	// Pipe out the cmd output in debug mode
@@ -181,6 +185,12 @@ func TsToMkv(inTsPaths []string, outMkvPath string) (err error) {
 			err = os.Remove(path)
 			if err != nil {
 				Logger.Println("Couldn't delete temp file: " + path + "\n Please delete manually.\n")
+			}
+		}
+		if subFile != "" {
+			err = os.Remove(subFile)
+			if err != nil {
+				Logger.Println("Couldn't delete temp subfile: " + subFile + "\n Please delete manually.\n")
 			}
 		}
 	}

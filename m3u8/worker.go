@@ -277,20 +277,15 @@ func (w *Worker) downloadM3u8List(j *WJob) {
 	}
 
 	Logger.Printf("Preparing to convert to %s\n", mp4Path)
+	inputs := []string{tmpTsFile}
 	if hasExtAudio, _ := m3f.HasDefaultExtAudioStream(); hasExtAudio {
 		// add the audio stream to the mix
-		Logger.Printf("Merging the audio stream and converting everything")
-		if err := TsToMp4([]string{tmpTsFile, defaultAudiostreamPath}, mp4Path); err != nil {
-			j.Err = fmt.Errorf("mp4 conversion error error - %v", err)
-			Logger.Println(j.Err)
-			return
-		}
-	} else {
-		if err := TsToMp4([]string{tmpTsFile}, mp4Path); err != nil {
-			j.Err = fmt.Errorf("mp4 conversion error error - %v", err)
-			Logger.Println(j.Err)
-			return
-		}
+		inputs = append(inputs, defaultAudiostreamPath)
+	}
+	if err := TsToMp4(inputs, mp4Path, w.CCPath(j)); err != nil {
+		j.Err = fmt.Errorf("mp4 conversion error error - %v", err)
+		Logger.Println(j.Err)
+		return
 	}
 
 	Logger.Printf("Episode available at %s\n", mp4Path)
@@ -415,10 +410,7 @@ func (w *Worker) downloadM3u8CC(j *WJob) {
 		Logger.Printf("Empty sub playlist")
 		return
 	}
-	subFile := j.AbsolutePath
-	if subFile == "" {
-		subFile = j.DestPath + "/" + j.Filename + ".srt" // + filepath.Ext(m3f.Segments[0])
-	}
+	subFile := w.CCPath(j)
 	Logger.Printf("Downloading sub file abs path: %s\n", subFile)
 	if _, err := os.Stat(j.DestPath); err != nil {
 		if os.IsNotExist(err) {
@@ -555,6 +547,17 @@ func (w *Worker) downloadM3u8Segment(j *WJob) {
 			return
 		}
 	}
+}
+
+func (w *Worker) CCPath(j *WJob) string {
+	if w == nil || j == nil {
+		return ""
+	}
+
+	if j.AbsolutePath == "" {
+		j.AbsolutePath = j.DestPath + "/" + j.Filename + ".srt" // + filepath.Ext(m3f.Segments[0])
+	}
+	return j.AbsolutePath
 }
 
 func decryptFile(segmentFile string, i int, j *WJob) error {
