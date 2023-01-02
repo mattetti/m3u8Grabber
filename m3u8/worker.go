@@ -143,37 +143,34 @@ func (w *Worker) downloadM3u8List(j *WJob) {
 		ccWG.Wait()
 	}
 
-	var defaultAudiostreamPath string
-	// check if there is a default audio stream to download
-	if hasStream, s := m3f.HasDefaultExtAudioStream(); hasStream {
-		// download and assemble the audio file
-		audiostreamFilename := j.Filename +
-			"_audio_" + s.Name + "_" + s.Lang
-		defaultAudiostreamPath = j.DestPath + "/" + audiostreamFilename
-		if Debug {
-			Logger.Println("--> Queuing up default audio stream")
-		}
-		audioJob := &WJob{
-			Type:          MasterAudioDL,
-			URL:           s.URI,
-			SkipConverter: true,
-			DestPath:      j.DestPath,
-			AbsolutePath:  defaultAudiostreamPath,
-			Filename:      audiostreamFilename,
-			Crypto:        m3f.CryptoMethod,
-			Key:           m3f.GlobalKey,
-			IV:            m3f.IV,
-			wg:            &sync.WaitGroup{},
-		}
+	// Queue up the audio streams in Audiostreams
+	if len(m3f.Audiostreams) > 0 {
+		for _, s := range m3f.Audiostreams {
+			// queue up the audio streams
+			audiostreamFilename := w.AudioStreamFilename(j, &s)
+			if audiostreamFilename == "" {
+				continue
+			}
+			audioJob := &WJob{
+				Type:          MasterAudioDL,
+				URL:           s.URI,
+				SkipConverter: true,
+				DestPath:      j.DestPath,
+				AbsolutePath:  filepath.Join(j.DestPath, audiostreamFilename),
+				Filename:      audiostreamFilename,
+				Crypto:        m3f.CryptoMethod,
+				Key:           m3f.GlobalKey,
+				IV:            m3f.IV,
+				wg:            &sync.WaitGroup{},
+			}
+			if !j.SubsOnly {
+				audioJob.wg.Add(1)
 
-		if !j.SubsOnly {
-			audioJob.wg.Add(1)
-
-			segChan <- audioJob
-			audioJob.wg.Wait()
+				segChan <- audioJob
+				audioJob.wg.Wait()
+			}
 		}
 	}
-	// TODO: check if we should be getting other variant audio streams
 
 	if !j.SubsOnly {
 		j.wg = &sync.WaitGroup{}
@@ -278,9 +275,15 @@ func (w *Worker) downloadM3u8List(j *WJob) {
 
 	Logger.Printf("Preparing to convert to %s\n", mp4Path)
 	inputs := []string{tmpTsFile}
-	if hasExtAudio, _ := m3f.HasDefaultExtAudioStream(); hasExtAudio {
-		// add the audio stream to the mix
-		inputs = append(inputs, defaultAudiostreamPath)
+	for _, s := range m3f.Audiostreams {
+		// queue up the audio streams
+		audiostreamFilename := w.AudioStreamFilename(j, &s)
+		if audiostreamFilename == "" {
+			continue
+		}
+		Logger.Printf("Adding audio stream %s\n", audiostreamFilename)
+		audiostreamPath := filepath.Join(j.DestPath, audiostreamFilename)
+		inputs = append(inputs, audiostreamPath)
 	}
 	if err := TsToMp4(inputs, mp4Path, w.CCPath(j)); err != nil {
 		j.Err = fmt.Errorf("mp4 conversion error error - %v", err)
@@ -558,6 +561,13 @@ func (w *Worker) CCPath(j *WJob) string {
 		j.AbsolutePath = j.DestPath + "/" + j.Filename + ".srt" // + filepath.Ext(m3f.Segments[0])
 	}
 	return j.AbsolutePath
+}
+
+func (w *Worker) AudioStreamFilename(j *WJob, s *Audiostream) string {
+	if w == nil || j == nil || s == nil {
+		return ""
+	}
+	return j.Filename + "_audio_" + s.Name + "_" + s.Lang
 }
 
 func decryptFile(segmentFile string, i int, j *WJob) error {

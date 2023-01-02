@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+
+	iso639_3 "github.com/barbashov/iso639-3"
 )
 
 // ConcatMediaList adds together all the files listed in the passed text file
@@ -128,20 +130,42 @@ func TsToMkv(inTsPaths []string, outMkvPath string, subFile string) (err error) 
 
 	// -y overwrites without asking
 	args := []string{"-y"}
+	hasSubs := false
+
+	if subFile != "" {
+		// check if the file does exist
+		if fileAlreadyExists(subFile) {
+			inTsPaths = append(inTsPaths, subFile)
+			hasSubs = true
+		}
+	}
 
 	// add all the inTSPaths to the args
 	for _, path := range inTsPaths {
 		args = append(args, "-i", path)
 	}
 
-	if subFile != "" {
-		// check if the file does exist
-		if fileAlreadyExists(subFile) {
-			// if it exists, add the subtitle to the ffmpeg command
-			args = append(args,
-				"-i", subFile,
-				"-c:s", "mov_text")
+	// set the audio language
+	idx := 0
+	for _, f := range inTsPaths {
+		if strings.Contains(f, "_audio_") {
+			lang := f[strings.LastIndex(f, "_")+1:]
+			langCode := iso639_3.FromAnyCode(lang).Part3
+			fmt.Printf("lang: %s, langCode: %s\n", lang, langCode)
+			args = append(args, fmt.Sprintf("-metadata:s:a:%d", idx), "language="+langCode)
+			idx++
 		}
+	}
+
+	// for each entry in the inTsPaths, add the following args, -map 0 etc...
+	if len(inTsPaths) > 2 {
+		for i := range inTsPaths {
+			args = append(args, "-map", fmt.Sprintf("%d", i))
+		}
+	}
+
+	if hasSubs {
+		args = append(args, "-c:s", "mov_text")
 	}
 
 	// add the rest of the args
@@ -185,12 +209,6 @@ func TsToMkv(inTsPaths []string, outMkvPath string, subFile string) (err error) 
 			err = os.Remove(path)
 			if err != nil {
 				Logger.Println("Couldn't delete temp file: " + path + "\n Please delete manually.\n")
-			}
-		}
-		if subFile != "" {
-			err = os.Remove(subFile)
-			if err != nil {
-				Logger.Println("Couldn't delete temp subfile: " + subFile + "\n Please delete manually.\n")
 			}
 		}
 	}
