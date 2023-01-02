@@ -52,8 +52,10 @@ type Rendition struct {
 	// the GROUP-ID attribute of an EXT-X-MEDIA tag elsewhere in the Playlist
 	// whose TYPE attribute is CLOSED-CAPTIONS, and indicates the set of
 	// closed-caption Renditions that can be used when playing the presentation.
-	ClosedCaptions []string
-	URL            string
+	ClosedCaptions  []string
+	SubtitleStreams []SubtitleStream
+
+	URL string
 	// Audio - The value is a quoted-string. It MUST match the value of the
 	// GROUP-ID attribute of an EXT-X-MEDIA tag elsewhere in the Master Playlist
 	// whose TYPE attribute is AUDIO. It indicates the set of audio Renditions

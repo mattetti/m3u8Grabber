@@ -114,13 +114,13 @@ func AdtsToAac(path string) error {
 }
 
 // TsToMp4 converts a mp4/aac TS file into a MKV file using ffmeg.
-func TsToMp4(inTsPath []string, outMp4Path string, subFile string) error {
+func TsToMp4(inTsPath []string, outMp4Path string, subFiles []string) error {
 	Logger.Println("converting to mp4")
-	return TsToMkv(inTsPath, outMp4Path, subFile)
+	return TsToMkv(inTsPath, outMp4Path, subFiles)
 }
 
 // TsToMkv converts a mp4/aac TS file into a MKV file using ffmeg.
-func TsToMkv(inTsPaths []string, outMkvPath string, subFile string) (err error) {
+func TsToMkv(inTsPaths []string, outMkvPath string, subFiles []string) (err error) {
 	ffmpegPath, err := FfmpegPath()
 	if err != nil {
 		Logger.Fatalf("ffmpeg wasn't found on your system, it is required to convert video files.\n"+
@@ -132,11 +132,13 @@ func TsToMkv(inTsPaths []string, outMkvPath string, subFile string) (err error) 
 	args := []string{"-y"}
 	hasSubs := false
 
-	if subFile != "" {
-		// check if the file does exist
+	for _, subFile := range subFiles {
 		if fileAlreadyExists(subFile) {
 			inTsPaths = append(inTsPaths, subFile)
+			Logger.Printf("Subtitle file %s added\n", subFile)
 			hasSubs = true
+		} else {
+			Logger.Printf("Subtitle file %s doesn't exist, skipping\n", subFile)
 		}
 	}
 
@@ -145,14 +147,40 @@ func TsToMkv(inTsPaths []string, outMkvPath string, subFile string) (err error) 
 		args = append(args, "-i", path)
 	}
 
-	// set the audio language
+	// set the audio language + title
 	idx := 0
 	for _, f := range inTsPaths {
 		if strings.Contains(f, "_audio_") {
 			lang := f[strings.LastIndex(f, "_")+1:]
-			langCode := iso639_3.FromAnyCode(lang).Part3
-			fmt.Printf("lang: %s, langCode: %s\n", lang, langCode)
+			iso := iso639_3.FromAnyCode(lang)
+			var langCode = "und"
+			if iso == nil {
+				Logger.Printf("[audio] Couldn't find language code for %s, using 'und' instead\n", lang)
+			} else {
+				langCode = iso.Part3
+			}
 			args = append(args, fmt.Sprintf("-metadata:s:a:%d", idx), "language="+langCode)
+			name := f[strings.LastIndex(f, "_audio_")+7 : strings.LastIndex(f, "_")]
+			args = append(args, fmt.Sprintf("-metadata:s:a:%d", idx), "title="+name)
+			idx++
+		}
+	}
+
+	// set the subtitle language
+	idx = 0
+	for _, f := range subFiles {
+		if fileAlreadyExists(f) {
+			lang := f[strings.LastIndex(f, "_")+1 : len(f)-4]
+			iso := iso639_3.FromAnyCode(lang)
+			var langCode = "und"
+			if iso == nil {
+				// qtz is a special case, it's not in the iso639-3 list (can mean audio description in some cases)
+				Logger.Printf("[Subtitle] Couldn't find language code for %s, using 'und' instead\n", lang)
+			} else {
+				langCode = iso.Part3
+			}
+			fmt.Printf("Subtitle stream -> lang: %s, langCode: %s\n", lang, langCode)
+			args = append(args, fmt.Sprintf("-metadata:s:s:%d", idx), "language="+langCode)
 			idx++
 		}
 	}

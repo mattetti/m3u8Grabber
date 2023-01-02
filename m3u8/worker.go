@@ -61,6 +61,7 @@ type WJob struct {
 	DestPath      string
 	Filename      string
 	Pos           int
+	Lang          string
 	// Err gets populated if something goes wrong while processing the job
 	Err    error
 	Crypto string
@@ -122,18 +123,18 @@ func (w *Worker) downloadM3u8List(j *WJob) {
 	j.Filename = CleanFilename(j.Filename)
 	j.DestPath = CleanPath(j.DestPath)
 
-	// Queue up the subs first
-	if len(m3f.ClosedCaptions) > 0 {
+	if len(m3f.SubtitleStreams) > 0 {
+		// we need to download the subs first
 		ccWG := &sync.WaitGroup{}
-		for _, cc := range m3f.ClosedCaptions {
+		for _, cc := range m3f.SubtitleStreams {
 			// queue up the subtitles
-			// FIXME: properly support multiple subtitles for a given source
 			ccjob := &WJob{
 				Type:          CCDL,
-				URL:           cc,
+				URL:           cc.URI,
 				SkipConverter: true,
 				DestPath:      j.DestPath,
 				Filename:      j.Filename,
+				Lang:          cc.Lang,
 			}
 			// kinda useless since there is usually only 1 cc file but still good to have
 			ccWG.Add(1)
@@ -162,6 +163,7 @@ func (w *Worker) downloadM3u8List(j *WJob) {
 				Key:           m3f.GlobalKey,
 				IV:            m3f.IV,
 				wg:            &sync.WaitGroup{},
+				Lang:          s.Lang,
 			}
 			if !j.SubsOnly {
 				audioJob.wg.Add(1)
@@ -285,7 +287,11 @@ func (w *Worker) downloadM3u8List(j *WJob) {
 		audiostreamPath := filepath.Join(j.DestPath, audiostreamFilename)
 		inputs = append(inputs, audiostreamPath)
 	}
-	if err := TsToMp4(inputs, mp4Path, w.CCPath(j)); err != nil {
+	var subPaths []string
+	for _, s := range m3f.SubtitleStreams {
+		subPaths = append(subPaths, w.CCPathForLang(j, s.Lang))
+	}
+	if err := TsToMp4(inputs, mp4Path, subPaths); err != nil {
 		j.Err = fmt.Errorf("mp4 conversion error error - %v", err)
 		Logger.Println(j.Err)
 		return
@@ -551,14 +557,20 @@ func (w *Worker) downloadM3u8Segment(j *WJob) {
 		}
 	}
 }
-
 func (w *Worker) CCPath(j *WJob) string {
+	if w == nil || j == nil {
+		return ""
+	}
+	return w.CCPathForLang(j, j.Lang)
+}
+
+func (w *Worker) CCPathForLang(j *WJob, lang string) string {
 	if w == nil || j == nil {
 		return ""
 	}
 
 	if j.AbsolutePath == "" {
-		j.AbsolutePath = j.DestPath + "/" + j.Filename + ".srt" // + filepath.Ext(m3f.Segments[0])
+		j.AbsolutePath = filepath.Join(j.DestPath, j.Filename+"_"+lang+".srt")
 	}
 	return j.AbsolutePath
 }

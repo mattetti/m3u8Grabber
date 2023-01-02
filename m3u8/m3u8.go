@@ -53,7 +53,8 @@ type M3u8File struct {
 	// elsewhere in the Playlist whose TYPE attribute is CLOSED-CAPTIONS, and
 	// indicates the set of closed-caption Renditions that can be used when
 	// playing the presentation.
-	ClosedCaptions []string
+
+	SubtitleStreams []SubtitleStream
 
 	Audiostreams []Audiostream
 }
@@ -83,6 +84,16 @@ type Audiostream struct {
 	Lang     string
 	Default  bool
 	Channels int
+}
+
+// example: #EXT-X-MEDIA:TYPE=SUBTITLES,SUBFORMAT=WebVTT,GROUP-ID="textstream",NAME="Sous-Titres Français",LANGUAGE="fr",AUTOSELECT=YES,DEFAULT=YES,URI
+type SubtitleStream struct {
+	GroupID   string
+	Name      string
+	URI       string
+	Lang      string
+	Default   bool
+	Subformat string
 }
 
 type M3u8Seg struct {
@@ -153,16 +164,11 @@ func (f *M3u8File) getSegments(httpProxy, socksProxy string) error {
 						stream.Default = true
 					}
 				case "URI":
-					stream.URI = v
+					stream.URI = makeURLAbsolute(v, f.Url)
 				case "CHANNELS":
 					chans, _ := strconv.ParseUint(v, 10, 32)
 					stream.Channels = int(chans)
 				}
-			}
-
-			if stream.URI != "" && !strings.HasPrefix(stream.URI, "http") {
-				lastSlash := strings.LastIndex(f.Url, "/")
-				stream.URI = f.Url[:lastSlash+1] + stream.URI
 			}
 
 			if stream.Default && stream.URI != "" {
@@ -174,18 +180,27 @@ func (f *M3u8File) getSegments(httpProxy, socksProxy string) error {
 		}
 		// subtitle
 		if strings.HasPrefix(l, subsStreamMarker) {
-			// TODO: properly parse the subtitle streams
-			idx := strings.Index(l, ",URI=")
-			if idx > 0 {
-				tail := l[idx+6:]
-				uri := tail[:strings.IndexByte(tail, '"')]
-				if !strings.HasPrefix(uri, "http") {
-					lastSlash := strings.LastIndex(f.Url, "/")
-					uri = f.Url[:lastSlash+1] + uri
+
+			stream := SubtitleStream{}
+			for k, v := range decodeEqParamLine(l[len(subsStreamMarker):]) {
+				switch k {
+				case "GROUP-ID":
+					stream.GroupID = v
+				case "NAME":
+					stream.Name = v
+				case "LANGUAGE":
+					stream.Lang = v
+				case "DEFAULT":
+					if strings.ToUpper(v) == "YES" {
+						stream.Default = true
+					}
+				case "URI":
+					stream.URI = makeURLAbsolute(v, f.Url)
+				case "SUBFORMAT":
+					stream.Subformat = v
 				}
-				f.ClosedCaptions = append(f.ClosedCaptions, uri)
-				Logger.Printf("Found subtitles at %s\n", uri)
 			}
+			f.SubtitleStreams = append(f.SubtitleStreams, stream)
 		}
 
 		// #EXT-X-MAP:URI="something_v720.mp4",BYTERANGE="19779@0"
@@ -279,12 +294,11 @@ func (f *M3u8File) getSegments(httpProxy, socksProxy string) error {
 			return f.Renditions[i].Bandwidth > f.Renditions[j].Bandwidth
 		})
 		f.Renditions[0].URL = makeURLAbsolute(f.Renditions[0].URL, f.Url)
-		for n, cc := range f.Renditions[0].ClosedCaptions {
-			f.Renditions[0].ClosedCaptions[n] = makeURLAbsolute(cc, f.Url)
-		}
 		Logger.Printf("Chosen rendition: %+v\n", f.Renditions[0])
 		f.Renditions[0].URL = makeURLAbsolute(f.Renditions[0].URL, f.Url)
-		nf := &M3u8File{Url: f.Renditions[0].URL, ClosedCaptions: f.Renditions[0].ClosedCaptions}
+		nf := &M3u8File{Url: f.Renditions[0].URL,
+			SubtitleStreams: f.Renditions[0].SubtitleStreams,
+		}
 		if err := nf.getSegments(httpProxy, socksProxy); err != nil {
 			return err
 		}
@@ -293,7 +307,7 @@ func (f *M3u8File) getSegments(httpProxy, socksProxy string) error {
 		f.Segments = nf.Segments
 		f.GlobalKey = nf.GlobalKey
 		f.IV = nf.IV
-		f.ClosedCaptions = append(f.ClosedCaptions, nf.ClosedCaptions...)
+		f.SubtitleStreams = append(f.SubtitleStreams, nf.SubtitleStreams...)
 		return nil
 	}
 
