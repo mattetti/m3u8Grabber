@@ -6,6 +6,7 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
+	"net/http/cookiejar"
 	"os"
 	"regexp"
 	"sort"
@@ -110,7 +111,15 @@ func (f *M3u8File) Process() error {
 }
 
 func (f *M3u8File) getSegments(httpProxy, socksProxy string) error {
-	client := &http.Client{}
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		panic(err)
+	}
+
+	client := &http.Client{
+		Jar: jar,
+	}
+
 	response, err := client.Get(f.Url)
 	if err != nil {
 		Logger.Printf("Couldn't download url: %s - %s\n", f.Url, err)
@@ -258,7 +267,7 @@ func (f *M3u8File) getSegments(httpProxy, socksProxy string) error {
 						if strings.Index(uri, "skd://") == 0 {
 							f.GlobalKey = []byte("1a0770070728b80aeeb0902129f52878")
 						} else {
-							resp, err := downloadUrl(&http.Client{}, uri, 3, "", "")
+							resp, err := downloadUrl(client, uri, 3, "", "")
 							if err != nil {
 								Logger.Printf("Failed to download the encryption key - %v\n", err)
 								return err
@@ -346,6 +355,9 @@ func decodeEqParamLine(line string) map[string]string {
 
 func makeURLAbsolute(uri, refURL string) string {
 	if !strings.HasPrefix(uri, "http") {
+		if lastQuestionMark := strings.LastIndex(refURL, "?"); lastQuestionMark > 0 {
+			refURL = refURL[:lastQuestionMark]
+		}
 		lastSlash := strings.LastIndex(refURL, "/")
 		uri = refURL[:lastSlash+1] + uri
 	}

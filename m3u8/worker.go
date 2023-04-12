@@ -35,7 +35,7 @@ const (
 	AudioSegmentDL
 )
 
-// LaunchWorkers starts download workers
+// LaunchWorkers starts download workers, nothing works if this isn't called.
 func LaunchWorkers(wg *sync.WaitGroup, stop <-chan bool) {
 	// we need to recreate the dlChan and the segChan in case we want to restart workers.
 	DlChan = make(chan *WJob)
