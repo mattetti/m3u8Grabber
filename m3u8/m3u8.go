@@ -267,7 +267,12 @@ func (f *M3u8File) getSegments(httpProxy, socksProxy string) error {
 						if strings.Index(uri, "skd://") == 0 {
 							f.GlobalKey = []byte("1a0770070728b80aeeb0902129f52878")
 						} else {
-							resp, err := downloadUrl(client, uri, 3, "", "")
+							req, err := http.NewRequest("GET", uri, nil)
+							if err != nil {
+								return fmt.Errorf("could not create request for %s, err: %v", uri, err)
+							}
+							req.Header.Set("Accept", "text/plain")
+							resp, err := client.Do(req)
 							if err != nil {
 								Logger.Printf("Failed to download the encryption key - %v\n", err)
 								return err
