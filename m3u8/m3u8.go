@@ -272,6 +272,8 @@ func (f *M3u8File) getSegments(httpProxy, socksProxy string) error {
 								return fmt.Errorf("could not create request for %s, err: %v", uri, err)
 							}
 							req.Header.Set("Accept", "text/plain")
+							req.Header.Set("Origin", f.Url)
+							req.Header.Set("Referer", f.Url)
 							resp, err := client.Do(req)
 							if err != nil {
 								Logger.Printf("Failed to download the encryption key - %v\n", err)
