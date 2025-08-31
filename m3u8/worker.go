@@ -146,12 +146,15 @@ func (w *Worker) downloadM3u8List(j *WJob) {
 
 	// Queue up the audio streams in Audiostreams
 	if len(m3f.Audiostreams) > 0 {
+		Logger.Printf("Found %d audio streams to download\n", len(m3f.Audiostreams))
 		for _, s := range m3f.Audiostreams {
 			// queue up the audio streams
 			audiostreamFilename := w.AudioStreamFilename(j, &s)
 			if audiostreamFilename == "" {
+				Logger.Printf("Skipping audio stream with empty filename\n")
 				continue
 			}
+			Logger.Printf("Queueing audio stream: %s (%s)\n", s.Name, s.Lang)
 			audioJob := &WJob{
 				Type:          MasterAudioDL,
 				URL:           s.URI,
@@ -569,10 +572,8 @@ func (w *Worker) CCPathForLang(j *WJob, lang string) string {
 		return ""
 	}
 
-	if j.AbsolutePath == "" {
-		j.AbsolutePath = filepath.Join(j.DestPath, j.Filename+"_"+lang+".srt")
-	}
-	return j.AbsolutePath
+	// Always generate the path based on the language, don't cache it
+	return filepath.Join(j.DestPath, j.Filename+"_"+lang+".srt")
 }
 
 func (w *Worker) AudioStreamFilename(j *WJob, s *Audiostream) string {

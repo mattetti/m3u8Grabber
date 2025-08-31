@@ -312,6 +312,11 @@ func (f *M3u8File) getSegments(httpProxy, socksProxy string) error {
 		f.Renditions[0].URL = makeURLAbsolute(f.Renditions[0].URL, f.Url)
 		Logger.Printf("Chosen rendition: %+v\n", f.Renditions[0])
 		f.Renditions[0].URL = makeURLAbsolute(f.Renditions[0].URL, f.Url)
+		
+		// Preserve the audio and subtitle streams that were already parsed from the master playlist
+		preservedAudioStreams := f.Audiostreams
+		preservedSubtitleStreams := f.SubtitleStreams
+		
 		nf := &M3u8File{Url: f.Renditions[0].URL,
 			SubtitleStreams: f.Renditions[0].SubtitleStreams,
 		}
@@ -323,6 +328,18 @@ func (f *M3u8File) getSegments(httpProxy, socksProxy string) error {
 		f.Segments = nf.Segments
 		f.GlobalKey = nf.GlobalKey
 		f.IV = nf.IV
+		
+		// Restore the preserved streams - these were parsed from the master playlist
+		// and should not be lost when processing a rendition
+		f.Audiostreams = preservedAudioStreams
+		f.SubtitleStreams = preservedSubtitleStreams
+		
+		if Debug {
+			Logger.Printf("Preserved %d audio streams and %d subtitle streams from master playlist\n", 
+				len(f.Audiostreams), len(f.SubtitleStreams))
+		}
+		
+		// Also append any subtitle streams that might be in the rendition itself
 		f.SubtitleStreams = append(f.SubtitleStreams, nf.SubtitleStreams...)
 		return nil
 	}
