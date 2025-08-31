@@ -460,17 +460,19 @@ func (w *Worker) downloadM3u8CC(j *WJob) {
 			Logger.Printf("Failed to get subtitle part %s, %v\n", segURL, err)
 			res.Body.Close()
 			continue
-			// _, err = io.Copy(out, res.Body)
-			// if err != nil {
-			// 	Logger.Printf("Failed to append to the subtitle file, %v\n", err)
-			// }
 		}
+		
+		// The astisub.Merge() function should handle timing correctly for HLS segments
+		// Each WebVTT segment has timestamps relative to the overall video timeline
 		subs.Merge(segSubs)
 		res.Body.Close()
 	}
-	// realign the subtitles
-	if len(subs.Items) > 0 {
-		subs.Add(-subs.Items[0].StartAt)
+	
+	// Do NOT realign WebVTT timestamps for HLS streams
+	// WebVTT segments in HLS contain absolute timestamps relative to the video timeline
+	// Realigning them will break synchronization with the video
+	if Debug && len(subs.Items) > 0 {
+		Logger.Printf("Preserving original WebVTT timing - first subtitle at %v\n", subs.Items[0].StartAt)
 	}
 	if err = subs.WriteToSRT(out); err != nil {
 		Logger.Printf("Failed to write the subtitle file, %v\n", err)
